@@ -10,14 +10,12 @@ import time
 # --- CONNECTIVITY ---
 @st.cache_resource
 def get_client():
-    """Connects to Google Cloud."""
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
     return gspread.authorize(creds)
 
 @st.cache_data(ttl=600)
 def get_data():
-    """Fetches all data tables (Cached to save Quota)."""
     client = get_client()
     try:
         sh = client.open("NotionToSew_DB")
@@ -26,38 +24,93 @@ def get_data():
             "transactions": pd.DataFrame(sh.worksheet("Transactions").get_all_records()),
             "items": pd.DataFrame(sh.worksheet("TransactionItems").get_all_records()),
             "customers": pd.DataFrame(sh.worksheet("Customers").get_all_records()),
-            "settings": pd.DataFrame(sh.worksheet("Settings").get_all_records())
+            "settings": pd.DataFrame(sh.worksheet("Settings").get_all_records()),
+            "expenses": pd.DataFrame(sh.worksheet("Expenses").get_all_records())
         }
-    except gspread.exceptions.APIError as e:
-        if "429" in str(e):
-            st.error("⏳ Google says we are moving too fast! Please wait 1 minute before refreshing.")
-            st.stop()
-        else:
-            st.error(f"Database Error: {e}")
-            return {}
+    except Exception as e:
+        return {}
 
-# --- HELPER: Force Cache Clear ---
 def force_refresh():
     get_data.clear()
     return True
 
-# --- LOGIC & WRITES ---
+# --- HELPER: FIND COLUMN BY NAME ---
+def get_col_index(worksheet, header_name):
+    """Finds the column number (1-based) for a given header name."""
+    headers = worksheet.row_values(1)
+    try:
+        # Python list is 0-based, gspread is 1-based, so +1
+        return headers.index(header_name) + 1
+    except ValueError:
+        return None
 
-def add_customer(name, email):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
-    ws = sh.worksheet("Customers")
-    new_id = f"C-{str(uuid.uuid4())[:5]}"
-    date_joined = datetime.now().strftime("%Y-%m-%d")
-    ws.append_row([new_id, name, email, "", date_joined, "", "", 0.0])
-    return force_refresh()
+# --- INVENTORY ACTIONS ---
 
-def add_inventory_item(sku, name, price, stock, wholesale_price):
+def add_inventory_item(sku, name, price, stock, wholesale_price, cost):
+    """Adds a completely new item."""
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Inventory")
-    ws.append_row([sku, name, price, stock, wholesale_price])
+    
+    # We need to map our values to the correct columns dynamically
+    headers = ws.row_values(1)
+    new_row = [""] * len(headers) # Create empty row with correct length
+    
+    # Map values
+    map_dict = {
+        "SKU": sku, "Name": name, "Price": price, "StockQty": stock, 
+        "WholesalePrice": wholesale_price, "Cost": cost
+    }
+    
+    for col_name, val in map_dict.items():
+        if col_name in headers:
+            idx = headers.index(col_name)
+            new_row[idx] = val
+            
+    ws.append_row(new_row)
     return force_refresh()
+
+def restock_inventory(sku, qty_to_add, new_unit_cost):
+    """
+    Adds stock to existing item and updates Cost using Weighted Average.
+    """
+    client = get_client()
+    sh = client.open("NotionToSew_DB")
+    ws = sh.worksheet("Inventory")
+    
+    # 1. Find the Row
+    try:
+        cell = ws.find(str(sku))
+        row = cell.row
+    except:
+        return False, "SKU not found"
+
+    # 2. Find Columns dynamically
+    col_stock = get_col_index(ws, "StockQty") # Check exact header name in your sheet!
+    col_cost = get_col_index(ws, "Cost")
+    
+    if not col_stock: return False, "Column 'StockQty' not found."
+    if not col_cost: return False, "Column 'Cost' not found."
+
+    # 3. Get Current Values
+    curr_stock = int(ws.cell(row, col_stock).value or 0)
+    try: curr_cost = float(ws.cell(row, col_cost).value or 0)
+    except: curr_cost = 0.0
+    
+    # 4. Calc Weighted Average
+    total_qty = curr_stock + qty_to_add
+    if total_qty > 0:
+        total_value = (curr_stock * curr_cost) + (qty_to_add * new_unit_cost)
+        new_avg_cost = total_value / total_qty
+    else:
+        new_avg_cost = new_unit_cost
+
+    # 5. Update
+    ws.update_cell(row, col_stock, total_qty)
+    ws.update_cell(row, col_cost, new_avg_cost)
+    
+    force_refresh()
+    return True, f"Updated! New Stock: {total_qty} | New Avg Cost: ${new_avg_cost:.3f}"
 
 def update_inventory_batch(df_changes):
     client = get_client()
@@ -69,109 +122,22 @@ def update_inventory_batch(df_changes):
     ws.update(values=headers + values, range_name="A1")
     return force_refresh()
 
+# --- SALES & CRM ---
+
+def add_customer(name, email):
+    client = get_client()
+    sh = client.open("NotionToSew_DB")
+    ws = sh.worksheet("Customers")
+    new_id = f"C-{str(uuid.uuid4())[:5]}"
+    # Safe append
+    ws.append_row([new_id, name, email, "", datetime.now().strftime("%Y-%m-%d"), "", "", 0.0])
+    return force_refresh()
+
 def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status="Paid", credit_used=0.0):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     
-    # 1. Deduct Credit
-    if credit_used > 0 and cust_id:
-        ws_cust = sh.worksheet("Customers")
-        try:
-            cell = ws_cust.find(cust_id)
-            current_credit = float(ws_cust.cell(cell.row, 8).value or 0)
-            ws_cust.update_cell(cell.row, 8, max(0.0, current_credit - credit_used))
-        except: pass
-
-    # 2. Invoice ID
-    ws_set = sh.worksheet("Settings")
-    try:
-        cell = ws_set.find("NextInvoiceID")
-        current_id = int(ws_set.cell(cell.row, cell.col + 1).value)
-        ws_set.update_cell(cell.row, cell.col + 1, current_id + 1)
-        invoice_id = str(current_id)
-    except:
-        invoice_id = f"INV-{datetime.now().strftime('%H%M%S')}"
-
-    date_now = datetime.now()
-    due_date = (date_now + timedelta(days=30 if is_wholesale else 0)).strftime("%Y-%m-%d")
-    final_pay_method = f"{payment_method} (+${credit_used} Credit)" if credit_used > 0 else payment_method
-    
-    # 3. Transaction
-    sh.worksheet("Transactions").append_row([
-        invoice_id, date_now.strftime("%Y-%m-%d %H:%M:%S"), total, final_pay_method, 
-        cust_id, status, due_date, tax, "TRUE" if is_wholesale else "FALSE"
-    ])
-    
-    # 4. Items
-    items_rows = []
-    for item in cart:
-        items_rows.append([invoice_id, item['sku'], item['qty'], item['price'], item['name']])
-    sh.worksheet("TransactionItems").append_rows(items_rows)
-    
-    # 5. Inventory Deduct
-    ws_inv = sh.worksheet("Inventory")
-    inv_data = ws_inv.get_all_records()
-    sku_map = {str(row['SKU']): i + 2 for i, row in enumerate(inv_data)}
-    updates = []
-    for item in cart:
-        s_key = str(item['sku'])
-        if s_key in sku_map:
-            row_num = sku_map[s_key]
-            curr_stock = int(ws_inv.cell(row_num, 4).value or 0) 
-            updates.append({'range': f'D{row_num}', 'values': [[max(0, curr_stock - item['qty'])]]})
-    if updates: ws_inv.batch_update(updates)
-            
-    return invoice_id # Note: commit_sale doesn't return force_refresh bool, but cache is cleared inside next call
-
-def mark_invoice_paid(invoice_id):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
-    ws = sh.worksheet("Transactions")
-    try:
-        cell = ws.find(str(invoice_id))
-        ws.update_cell(cell.row, 6, "Paid")
-        return force_refresh()
-    except: return False
-
-def delete_invoice(invoice_id):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
-    ws_trans = sh.worksheet("Transactions")
-    try: ws_trans.delete_rows(ws_trans.find(str(invoice_id)).row)
-    except: pass
-    ws_items = sh.worksheet("TransactionItems")
-    try:
-        while True: ws_items.delete_rows(ws_items.find(str(invoice_id)).row)
-    except: pass
-    return force_refresh()
-
-def update_customer_details(cust_id, new_name, address, phone, notes):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
-    ws = sh.worksheet("Customers")
-    try:
-        cell = ws.find(cust_id)
-        ws.update_cell(cell.row, 2, new_name)
-        ws.update_cell(cell.row, 4, phone)
-        ws.update_cell(cell.row, 6, address)
-        ws.update_cell(cell.row, 7, notes)
-        return force_refresh()
-    except: return False
-
-def delete_customer(cust_id):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
-    ws = sh.worksheet("Customers")
-    try:
-        ws.delete_rows(ws.find(cust_id).row)
-        return force_refresh()
-    except: return False
-
-def sell_gift_certificate(giver_id, receiver_id, amount, pay_method):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
-    
-    # Invoice ID
+    # 1. Invoice ID
     ws_set = sh.worksheet("Settings")
     try:
         cell = ws_set.find("NextInvoiceID")
@@ -180,48 +146,81 @@ def sell_gift_certificate(giver_id, receiver_id, amount, pay_method):
         invoice_id = str(current_id)
     except: invoice_id = f"INV-{datetime.now().strftime('%H%M%S')}"
 
+    # 2. Transaction Record
     date_now = datetime.now()
-    ws_cust = sh.worksheet("Customers")
-    try: receiver_name = ws_cust.cell(ws_cust.find(receiver_id).row, 2).value
-    except: receiver_name = "Unknown"
-
+    due = (date_now + timedelta(days=30)).strftime("%Y-%m-%d") if status == "Pending" else ""
+    
     sh.worksheet("Transactions").append_row([
-        invoice_id, date_now.strftime("%Y-%m-%d %H:%M:%S"), amount, pay_method, 
-        giver_id, "Paid", date_now.strftime("%Y-%m-%d"), 0.0, "FALSE"
-    ])
-    sh.worksheet("TransactionItems").append_row([
-        invoice_id, "GIFT-CERT", 1, amount, f"Gift Certificate for {receiver_name}"
+        invoice_id, date_now.strftime("%Y-%m-%d %H:%M:%S"), total, payment_method, 
+        cust_id, status, due, tax, "TRUE" if is_wholesale else "FALSE"
     ])
     
-    try:
-        cell = ws_cust.find(receiver_id)
-        curr = float(ws_cust.cell(cell.row, 8).value or 0)
-        ws_cust.update_cell(cell.row, 8, curr + amount)
-    except: pass
+    # 3. Items Record (WITH COST TRACKING)
+    df_inv = get_data()['inventory']
+    items_rows = []
+    
+    for item in cart:
+        # Find cost in current inventory
+        try:
+            row = df_inv[df_inv['SKU'].astype(str) == str(item['sku'])].iloc[0]
+            unit_cost = float(row.get('Cost', 0)) # Uses the column name 'Cost'
+        except: unit_cost = 0.0
+        
+        items_rows.append([
+            invoice_id, item['sku'], item['qty'], item['price'], item['name'], unit_cost
+        ])
+    
+    sh.worksheet("TransactionItems").append_rows(items_rows)
 
-    force_refresh()
+    # 4. Inventory Deduct (Dynamic Column)
+    ws_inv = sh.worksheet("Inventory")
+    col_stock = get_col_index(ws_inv, "StockQty")
+    col_sku = get_col_index(ws_inv, "SKU")
+    
+    if col_stock and col_sku:
+        inv_data = ws_inv.get_all_records()
+        # Create map: SKU -> Row Number (Row index starts at 2 because header is 1)
+        sku_map = {str(row['SKU']): i + 2 for i, row in enumerate(inv_data)}
+        
+        updates = []
+        for item in cart:
+            s_key = str(item['sku'])
+            if s_key in sku_map:
+                row_num = sku_map[s_key]
+                # We need to fetch current stock to decrement it. 
+                # Batch update is tricky with calculation, so we do one-by-one safely or fetch-all.
+                # Ideally, we read all stock first. For now, let's just use the cached df value for speed
+                # BUT this might be dangerous if multiple people use it.
+                # Safe way:
+                curr_val = int(ws_inv.cell(row_num, col_stock).value or 0)
+                ws_inv.update_cell(row_num, col_stock, max(0, curr_val - item['qty']))
+                
+    # 5. Credit Logic
+    if credit_used > 0 and cust_id:
+        ws_cust = sh.worksheet("Customers")
+        try:
+            cell = ws_cust.find(cust_id)
+            # Assuming Credit is Col 8 (H), but let's try to be smart if possible, 
+            # otherwise sticking to 8 is risky if you changed Customers sheet too.
+            # Best to find "Credit" header.
+            col_cred = get_col_index(ws_cust, "Credit") or 8
+            curr_c = float(ws_cust.cell(cell.row, col_cred).value or 0)
+            ws_cust.update_cell(cell.row, col_cred, max(0.0, curr_c - credit_used))
+        except: pass
+        
     return invoice_id
 
-def update_settings(updates_dict):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
-    ws = sh.worksheet("Settings")
-    data = ws.get_all_records()
-    key_map = {row['Key']: i + 2 for i, row in enumerate(data)}
-    for key, new_val in updates_dict.items():
-        if key in key_map: ws.update_cell(key_map[key], 2, new_val)
-        else: ws.append_row([key, new_val])
-    return force_refresh()
+# --- REPORTS ---
 
 def add_expense(date, category, amount, description):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Expenses")
-    ws.append_row([str(date), category, f"{float(amount):.3f}", description])
+    ws.append_row([str(date), category, amount, description])
     return force_refresh()
 
-# --- PDF GENERATOR ---
-def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0):
+# --- PDF GENERATORS (Unchanged) ---
+def create_invoice_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 20); pdf.cell(0, 10, "Notion to Sew", ln=True)
@@ -230,7 +229,8 @@ def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, 
     pdf.ln(10)
     pdf.set_font("Helvetica", "B", 12); pdf.cell(0, 10, f"INVOICE #{invoice_id}", ln=True, align='R')
     pdf.set_font("Helvetica", "", 10); pdf.cell(0, 5, f"Date: {datetime.now().strftime('%Y-%m-%d')}", ln=True, align='R')
-    pdf.cell(0, 5, f"Due: {due_date}", ln=True, align='R'); pdf.ln(5)
+    if due_date: pdf.cell(0, 5, f"Due: {due_date}", ln=True, align='R')
+    pdf.ln(5)
     pdf.set_font("Helvetica", "B", 10); pdf.cell(0, 5, f"Bill To: {customer_name}", ln=True); pdf.ln(10)
     
     pdf.set_fill_color(240, 240, 240); pdf.set_font("Helvetica", "B", 9)
@@ -247,6 +247,65 @@ def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, 
     pdf.cell(165, 6, "Subtotal:", 0, 0, 'R'); pdf.cell(25, 6, f"${subtotal:.2f}", 0, 1, 'R')
     pdf.cell(165, 6, "Tax:", 0, 0, 'R'); pdf.cell(25, 6, f"${tax:.2f}", 0, 1, 'R')
     if credit_applied > 0:
-        pdf.cell(165, 6, "Store Credit Used:", 0, 0, 'R'); pdf.cell(25, 6, f"-${credit_applied:.2f}", 0, 1, 'R')
-    pdf.set_font("Helvetica", "B", 12); pdf.cell(165, 8, "AMOUNT DUE:", 0, 0, 'R'); pdf.cell(25, 8, f"${max(0.0, total - credit_applied):.2f}", 0, 1, 'R')
+        pdf.cell(165, 6, "Credit Used:", 0, 0, 'R'); pdf.cell(25, 6, f"-${credit_applied:.2f}", 0, 1, 'R')
+    pdf.set_font("Helvetica", "B", 12); pdf.cell(165, 8, "TOTAL:", 0, 0, 'R'); pdf.cell(25, 8, f"${max(0.0, total - credit_applied):.2f}", 0, 1, 'R')
+    return pdf.output(dest='S').encode('latin-1')
+
+def create_income_statement_pdf(start_date, end_date, revenue, cogs, expenses_df):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Notion to Sew", ln=True, align='C')
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 10, "Income Statement - Classified", ln=True, align='C')
+    pdf.set_font("Helvetica", "I", 10)
+    pdf.cell(0, 10, f"Reporting Period: {start_date} through {end_date}", ln=True, align='C')
+    pdf.ln(10)
+    
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(100, 8, "REVENUE", ln=True)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(130, 6, "     Total Sales Revenue", 0, 0)
+    pdf.cell(30, 6, f"{revenue:,.2f}", 0, 1, 'R')
+    
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(130, 8, "Total Revenue:", 0, 0)
+    pdf.cell(30, 8, f"{revenue:,.2f}", "T", 1, 'R')
+    pdf.ln(5)
+    
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(100, 8, "COST OF GOODS SOLD", ln=True)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(130, 6, "     Cost of Goods Sold", 0, 0)
+    pdf.cell(30, 6, f"{cogs:,.2f}", 0, 1, 'R')
+    
+    gross_profit = revenue - cogs
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(130, 10, "GROSS PROFIT:", 0, 0)
+    pdf.cell(30, 10, f"{gross_profit:,.2f}", "T", 1, 'R')
+    pdf.ln(5)
+    
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(100, 8, "OPERATING EXPENSES", ln=True)
+    pdf.set_font("Helvetica", "", 10)
+    
+    total_expenses = 0.0
+    if not expenses_df.empty:
+        expenses_df['Amount'] = pd.to_numeric(expenses_df['Amount'], errors='coerce')
+        grouped = expenses_df.groupby('Category')['Amount'].sum()
+        for cat, amt in grouped.items():
+            pdf.cell(130, 6, f"     {cat}", 0, 0)
+            pdf.cell(30, 6, f"{amt:,.2f}", 0, 1, 'R')
+            total_expenses += amt
+            
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(130, 8, "Total Operating Expenses:", 0, 0)
+    pdf.cell(30, 8, f"{total_expenses:,.2f}", "T", 1, 'R')
+    pdf.ln(5)
+    
+    net_profit = gross_profit - total_expenses
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(130, 12, "NET PROFIT / (LOSS):", 0, 0)
+    pdf.cell(30, 12, f"{net_profit:,.2f}", "TB", 1, 'R')
+    
     return pdf.output(dest='S').encode('latin-1')
