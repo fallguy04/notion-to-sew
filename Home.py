@@ -6,7 +6,7 @@ import base64
 
 # --- CONFIG ---
 st.set_page_config(page_title="Admin | Notion to Sew", layout="wide", page_icon="🧵")
-    
+
 # --- CUSTOM CSS ---
 st.markdown("""
 <style>
@@ -256,7 +256,7 @@ elif menu == "👥 Customers":
         if len(digits) == 10: return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
         return str(phone_raw)
 
-    # ==========================================
+# ==========================================
     # VIEW A: THE CUSTOMER LIST (Cards)
     # ==========================================
     if st.session_state['active_cust_id'] is None:
