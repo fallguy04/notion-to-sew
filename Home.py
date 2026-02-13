@@ -6,19 +6,6 @@ import base64
 
 # --- CONFIG ---
 st.set_page_config(page_title="Admin | Notion to Sew", layout="wide", page_icon="🧵")
-
-# --- APP MODE SELECTOR ---
-# Hide sidebar by default on mobile/kiosk if possible
-mode = st.sidebar.selectbox("App Mode", ["Admin HQ", "Kiosk Mode"], index=0)
-
-if mode == "Kiosk Mode":
-    # --- RUN KIOSK CODE HERE ---
-    # (Paste the ENTIRE contents of kiosk.py here, indented under this if statement)
-    pass 
-else:
-    # --- RUN ADMIN CODE HERE ---
-    # (Your existing admin.py code goes here)
-    pass
     
 # --- CUSTOM CSS ---
 st.markdown("""
