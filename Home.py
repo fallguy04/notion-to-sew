@@ -234,76 +234,207 @@ elif app_mode == "🔐 Admin HQ":
             st.success(f"Order #{st.session_state['last_order_id']} Completed!")
             if 'last_invoice_pdf' in st.session_state: show_pdf_viewer(st.session_state['last_invoice_pdf'])
 
+    # ==========================================
+    # 4. CUSTOMERS (CRM & GIFT CARDS)
+    # ==========================================
     elif menu == "👥 Customers":
-        st.title("Customers")
-        if 'active_cust_id' not in st.session_state: st.session_state['active_cust_id'] = None
-        df_cust = st.session_state['data']['customers']; df_trans = st.session_state['data']['transactions']
+        st.title("Customer Management")
         
-        if st.session_state['active_cust_id'] is None:
-            c_search, c_add = st.columns([3, 1], vertical_alignment="bottom")
-            search = c_search.text_input("🔍 Search", placeholder="Name/Phone...")
-            with c_add:
-                with st.popover("➕ New Customer", use_container_width=True):
-                    with st.form("quick_c"):
-                        n=st.text_input("Name"); e=st.text_input("Email")
-                        if st.form_submit_button("Create"): db.add_customer(n, e); st.success("Done"); auto_refresh()
-
-            filtered = df_cust[df_cust['Name'].astype(str).str.contains(search, case=False)] if search else df_cust
-            if filtered.empty: st.info("No customers found.")
-            else:
-                for i, row in filtered.head(50).iterrows():
-                    with st.container(border=True):
-                        c1, c2, c3 = st.columns([3, 1, 1])
-                        c1.subheader(row['Name']); c1.caption(f"📞 {row['Phone']}")
-                        try: cred = float(row.get('Credit', 0) or 0)
-                        except: cred = 0.0
-                        c2.metric("Credit", f"${cred:.2f}")
-                        if c3.button("Manage", key=f"m_{row['CustomerID']}"): st.session_state['active_cust_id'] = row['CustomerID']; st.rerun()
+        df_cust = st.session_state['data']['customers']
+        df_trans = st.session_state['data']['transactions']
+        df_items = st.session_state['data']['items']
+        
+        # --- 1. ADD NEW CUSTOMER ---
+        with st.expander("➕ Register New Customer"):
+            with st.form("add_cust_admin"):
+                c_new1, c_new2 = st.columns(2)
+                new_n = c_new1.text_input("Full Name")
+                new_e = c_new2.text_input("Email")
+                if st.form_submit_button("Create Profile"):
+                    if new_n:
+                        db.add_customer(new_n, new_e)
+                        st.success(f"Created profile for {new_n}!")
+                        st.rerun()
+                    else:
+                        st.error("Name is required.")
+    
+        st.divider()
+    
+        # --- 2. SEARCH & SELECT ---
+        # Helper: Smart Phone Formatting
+        def format_us_phone(phone_raw):
+            digits = ''.join(filter(str.isdigit, str(phone_raw)))
+            if len(digits) == 10: return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+            return str(phone_raw)
+    
+        def format_lookup(row):
+            phone = format_us_phone(row['Phone'])
+            if phone: return f"{row['Name']} | {phone}"
+            return row['Name']
+            
+        df_cust['lookup'] = df_cust.apply(format_lookup, axis=1)
+        
+        selected_lookup = st.selectbox(
+            "🔍 Find Customer Profile", 
+            df_cust['lookup'], 
+            index=None, 
+            placeholder="Type name or phone..."
+        )
+        
+        # --- ROSTER VIEW (Default) ---
+        if not selected_lookup:
+            st.info("👆 Search above to manage a specific profile, or view the roster below.")
+            
+            df_display = df_cust.copy()
+            df_display['Credit'] = pd.to_numeric(df_display['Credit'], errors='coerce').fillna(0)
+            df_display['Phone'] = df_display['Phone'].apply(format_us_phone)
+            
+            st.dataframe(
+                df_display[['Name', 'Phone', 'Email', 'Credit', 'Joined']],
+                use_container_width=True,
+                column_config={
+                    "Credit": st.column_config.NumberColumn(format="$%.2f"),
+                },
+                hide_index=True
+            )
+    
+        # --- PROFILE VIEW ---
         else:
-            cid = st.session_state['active_cust_id']
-            row = df_cust[df_cust['CustomerID'] == cid].iloc[0]
-            if st.button("⬅️ Back"): st.session_state['active_cust_id'] = None; st.rerun()
-            st.title(row['Name'])
-            c1, c2 = st.columns([1, 2])
-            with c1:
-                with st.form(f"e_{cid}"):
-                    nn=st.text_input("Name", row['Name']); pp=st.text_input("Phone", str(row.get('Phone','')))
-                    aa=st.text_area("Address", str(row.get('Address',''))); nt=st.text_area("Notes", str(row.get('Notes','')))
-                    if st.form_submit_button("Save"): db.update_customer_details(cid, nn, aa, pp, nt); st.success("Saved!"); auto_refresh()
+            name_only = selected_lookup.split(" | ")[0].strip()
+            mask = df_cust['Name'] == name_only
+            
+            if not df_cust[mask].empty:
+                row = df_cust[mask].iloc[0]
+                cid = row['CustomerID']
                 
-                # --- RESTORED: GIFT CARDS ---
-                with st.expander("🎁 Sell Gift Certificate"):
-                    giver = st.selectbox("Payer", ["Self"] + list(df_cust['Name']), index=0)
-                    gc_amt = st.number_input("Amount", 0.0, 5000.0, 50.0)
-                    gc_pay = st.selectbox("Method", ["Cash", "Card", "Venmo", "Check"])
-                    if st.button("💸 Process"):
-                        giver_id = cid if giver == "Self" else df_cust[df_cust['Name']==giver].iloc[0]['CustomerID']
-                        db.sell_gift_certificate(giver_id, cid, gc_amt, gc_pay); st.success("Added!"); auto_refresh()
-
-            with c2:
-                st.subheader("History")
-                my_t = df_trans[df_trans['CustomerID'] == cid]
-                if my_t.empty: st.info("No history.")
-                else:
-                    for i, t in my_t.sort_values("Timestamp", ascending=False).iterrows():
-                        with st.container(border=True):
-                            c_a, c_b, c_c = st.columns([2,1,1])
-                            c_a.write(f"**{t['Timestamp']}**"); c_a.caption(f"#{t['TransactionID']}")
-                            c_b.write(f"${t['TotalAmount']}")
-                            # --- RESTORED: VIEW INVOICE BUTTON ---
-                            if c_c.button("👁️ View", key=f"v_{t['TransactionID']}"):
-                                df_i = st.session_state['data']['items']
-                                df_i['TransactionID'] = df_i['TransactionID'].astype(str)
-                                items = df_i[df_i['TransactionID'] == str(t['TransactionID'])]
-                                cart_r = [{"sku": str(r.get('SKU','')), "name": r['Name'], "qty": int(r['QtySold']), "price": float(r['Price'])} for _, r in items.iterrows()]
-                                if 'settings' in st.session_state['data']:
-                                    s_d = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
-                                    addr = s_d.get("Address", "Modesto, CA")
-                                else: addr = "Modesto, CA"
-                                try: tax = float(t['TaxAmount'])
-                                except: tax = 0.0
-                                pdf = db.create_invoice_pdf(t['TransactionID'], row['Name'], addr, cart_r, 0, tax, float(t['TotalAmount']), "Paid")
-                                show_pdf_viewer(pdf)
+                col1, col2 = st.columns([1, 1.5])
+                
+                # LEFT: Edit Profile
+                with col1:
+                    with st.container(border=True):
+                        st.subheader("Edit Profile")
+                        
+                        with st.form(f"edit_{cid}"):
+                            u_name = st.text_input("Name", value=row['Name'])
+                            u_phone = st.text_input("Phone", value=str(row.get('Phone', "")))
+                            u_addr = st.text_area("Address", value=str(row.get('Address', "")))
+                            u_notes = st.text_area("Notes", value=str(row.get('Notes', "")))
+                            
+                            if st.form_submit_button("💾 Save Profile Changes"):
+                                db.update_customer_details(cid, u_name, u_addr, u_phone, u_notes)
+                                st.success("Saved!")
+                                st.rerun()
+    
+                        # DELETE CUSTOMER LOGIC
+                        st.write("")
+                        with st.expander("🗑️ Danger Zone"):
+                            st.warning("Deleting this customer cannot be undone.")
+                            confirm_del = st.checkbox(f"I understand, delete {row['Name']}", key=f"del_confirm_{cid}")
+                            if confirm_del:
+                                if st.button("Delete Profile Permanently", type="primary"):
+                                    db.delete_customer(cid)
+                                    st.success("Profile Deleted.")
+                                    st.rerun()
+    
+                    st.divider()
+                    
+                    # Credit Logic
+                    try: raw_cred = float(row.get('Credit', 0) if row.get('Credit') != "" else 0)
+                    except: raw_cred = 0.0
+                    st.metric("Store Credit Balance", f"${raw_cred:,.2f}")
+                    
+                    with st.expander("🎁 Sell Gift Certificate"):
+                        giver_lookup = st.selectbox("Who is paying?", ["Self (Same Person)"] + list(df_cust['Name']), index=0)
+                        gc_amount = st.number_input("Amount ($)", 0.0, 5000.0, 50.0, step=10.0)
+                        gc_pay_method = st.selectbox("Payment Method", ["Cash", "Card", "Venmo", "Check"])
+                        
+                        if st.button("💸 Add Credit", type="primary"):
+                            if giver_lookup == "Self (Same Person)":
+                                giver_id = cid
+                            else:
+                                giver_row = df_cust[df_cust['Name'] == giver_lookup].iloc[0]
+                                giver_id = giver_row['CustomerID']
+                            
+                            with st.spinner("Processing..."):
+                                db.sell_gift_certificate(giver_id, cid, gc_amount, gc_pay_method)
+                                st.success(f"Added ${gc_amount}!")
+                                st.rerun()
+    
+                # RIGHT: History
+                with col2:
+                    st.subheader("Purchase History")
+                    my_trans = df_trans[df_trans['CustomerID'] == cid]
+                    
+                    if my_trans.empty:
+                        st.info("No purchase history found.")
+                    else:
+                        my_trans = my_trans.sort_values(by="Timestamp", ascending=False)
+                        for i, t_row in my_trans.iterrows():
+                            with st.container(border=True):
+                                c_date, c_amt, c_stat, c_act = st.columns([1.5, 1, 1, 1.5])
+                                
+                                c_date.write(f"**{str(t_row['Timestamp'])[:10]}**")
+                                c_date.caption(f"#{t_row['TransactionID']}")
+                                
+                                try: amt_val = float(t_row['TotalAmount'] if t_row['TotalAmount'] != '' else 0)
+                                except: amt_val = 0.0
+                                c_amt.write(f"**${amt_val:.2f}**")
+                                
+                                status_clean = str(t_row['Status']).strip().title()
+                                is_paid = (status_clean == "Paid")
+                                
+                                if is_paid: c_stat.success("Paid", icon="✅")
+                                else: c_stat.warning("Unpaid", icon="⏳")
+                                
+                                # ACTION BUTTONS
+                                c_v, c_p, c_d = c_act.columns(3)
+                                
+                                # View
+                                if c_v.button("👁️", key=f"v_{t_row['TransactionID']}"):
+                                    st.session_state[f"view_inv_{t_row['TransactionID']}"] = True
+                                    st.rerun()
+                                    
+                                # Pay
+                                if not is_paid:
+                                    if c_p.button("💲", key=f"mp_{t_row['TransactionID']}"):
+                                        db.mark_invoice_paid(t_row['TransactionID'])
+                                        st.toast("Paid!")
+                                        st.rerun()
+                                        
+                                # Delete Invoice
+                                if c_d.button("🗑️", key=f"del_{t_row['TransactionID']}", type="primary"):
+                                    db.delete_invoice(t_row['TransactionID'])
+                                    st.warning("Invoice Deleted.")
+                                    st.rerun()
+    
+                            # PREVIEWER
+                            if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
+                                with st.container(border=True):
+                                    if st.button("❌ Close Preview", key=f"close_{t_row['TransactionID']}"):
+                                        st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
+                                        st.rerun()
+    
+                                    t_id = str(t_row['TransactionID'])
+                                    df_items['TransactionID'] = df_items['TransactionID'].astype(str)
+                                    inv_items = df_items[df_items['TransactionID'] == t_id]
+                                    
+                                    cart_rebuild = []
+                                    for _, item in inv_items.iterrows():
+                                        try: q = int(item['QtySold']); p = float(item['Price'])
+                                        except: q=1; p=0.0
+                                        cart_rebuild.append({"sku": str(item.get('SKU','')), "name": item['Name'], "qty": q, "price": p})
+                                    
+                                    try: tax_val = float(t_row['TaxAmount'] if t_row['TaxAmount'] != '' else 0)
+                                    except: tax_val = 0.0
+                                    
+                                    if 'settings' in st.session_state['data']:
+                                        s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
+                                        addr = s_dict.get("Address", "Modesto, CA")
+                                    else: addr = "Modesto, CA"
+                                    
+                                    pdf_bytes = db.create_pdf(t_id, row['Name'], addr, cart_rebuild, 0, tax_val, amt_val, str(t_row.get('DueDate', '')))
+                                    b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                                    st.markdown(f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600"></iframe>', unsafe_allow_html=True)
 
     elif menu == "📝 Reports":
         st.title("Reports")
@@ -349,17 +480,66 @@ elif app_mode == "🔐 Admin HQ":
                 a = st.number_input("Amount", 0.0); desc = st.text_input("Desc")
                 if st.form_submit_button("Log"): db.add_expense(d, c, a, desc); st.success("Logged"); auto_refresh()
         
+        # --- TAB 4: UNPAID ---
         with tab4:
-            st.subheader("Unpaid Invoices")
-            df_t = st.session_state['data']['transactions']
-            unpaid = df_t[df_t['Status'] == 'Pending']
-            if unpaid.empty: st.success("All paid!")
+            st.header("Accounts Receivable")
+            df_trans = st.session_state['data']['transactions']
+            df_cust = st.session_state['data']['customers']
+            df_items = st.session_state['data']['items']
+            
+            pending = df_trans[df_trans['Status'] == 'Pending'].copy()
+            
+            if pending.empty:
+                st.success("🎉 All invoices are paid!")
             else:
-                for i, row in unpaid.iterrows():
-                    c1, c2, c3 = st.columns([2, 1, 1])
-                    c1.write(f"#{row['TransactionID']} - ${row['TotalAmount']}")
-                    if c2.button("💲 Pay", key=f"up_{row['TransactionID']}"): db.mark_invoice_paid(row['TransactionID']); auto_refresh()
-                    if c3.button("👁️ View", key=f"uv_{row['TransactionID']}"): st.info("Go to Customer tab to print.")
+                if not df_cust.empty:
+                    pending['CustomerID'] = pending['CustomerID'].astype(str)
+                    df_cust['CustomerID'] = df_cust['CustomerID'].astype(str)
+                    merged = pending.merge(df_cust[['CustomerID', 'Name']], on='CustomerID', how='left')
+                else:
+                    merged = pending
+                    merged['Name'] = "Unknown"
+                
+                for i, row in merged.iterrows():
+                    with st.container(border=True):
+                        c1, c2, c3, c4 = st.columns([2, 2, 1, 1.5])
+                        cust_name = row['Name'] if pd.notna(row['Name']) else "Unknown"
+                        c1.write(f"**{cust_name}**")
+                        c1.caption(f"Invoice #{row['TransactionID']}")
+                        c2.write(f"Due: {row['DueDate']}")
+                        c3.write(f"**${float(row['TotalAmount']):,.2f}**")
+                        
+                        if c4.button("👁️ View", key=f"v_{row['TransactionID']}"):
+                             # Rebuild Cart
+                            inv_items = df_items[df_items['TransactionID'] == row['TransactionID']]
+                            cart_rebuild = []
+                            for _, item in inv_items.iterrows():
+                                cart_rebuild.append({
+                                    "sku": item['SKU'], "name": item['Name'], 
+                                    "qty": int(item['QtySold']), "price": float(item['Price'])
+                                })
+                            
+                            s_df = st.session_state['data']['settings']
+                            s_dict = dict(zip(s_df['Key'], s_df['Value']))
+                            address = s_dict.get("Address", "Modesto, CA")
+                            
+                            pdf_bytes = db.create_pdf(
+                                row['TransactionID'], cust_name, address, cart_rebuild, 
+                                0, float(row['TaxAmount']), float(row['TotalAmount']), row['DueDate']
+                            )
+                            
+                            # Embed
+                            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+                            st.markdown(f"### Invoice #{row['TransactionID']}")
+                            st.markdown(pdf_display, unsafe_allow_html=True)
+                            if st.button("❌ Close Preview", key=f"close_{row['TransactionID']}"): st.rerun()
+                        
+                        if c4.button("Mark Paid", key=f"pay_{row['TransactionID']}"):
+                            if db.mark_invoice_paid(row['TransactionID']):
+                                st.balloons()
+                                db.get_data.clear()
+                                st.rerun()
         
         with tab5:
             st.subheader("Top Selling Items")
