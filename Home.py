@@ -20,7 +20,7 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .stButton button { border-radius: 5px; }
-    /* Big Buttons for Kiosk Mode */
+    /* Big Buttons for Kiosk */
     .big-btn button { height: 60px !important; font-size: 22px !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -32,11 +32,18 @@ if 'data' not in st.session_state:
 if 'cart' not in st.session_state: st.session_state['cart'] = []
 if 'kiosk_cart' not in st.session_state: st.session_state['kiosk_cart'] = []
 if 'last_order_id' not in st.session_state: st.session_state['last_order_id'] = None
+if 'admin_unlocked' not in st.session_state: st.session_state['admin_unlocked'] = False
 
 # --- HELPER: AUTO REFRESH ---
 def auto_refresh():
     if 'data' in st.session_state: del st.session_state['data']
     st.rerun()
+
+# --- HELPER: PHONE FORMAT ---
+def format_us_phone(phone_raw):
+    digits = ''.join(filter(str.isdigit, str(phone_raw)))
+    if len(digits) == 10: return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    return str(phone_raw)
 
 # ==========================================
 # 🛑 THE GATEKEEPER
@@ -47,10 +54,18 @@ with st.sidebar:
     st.divider()
     
     if app_mode == "🔐 Admin HQ":
-        password = st.text_input("Admin Password", type="password")
-        if password != "1234": 
-            st.warning("Enter password to access HQ.")
-            st.stop()
+        if not st.session_state['admin_unlocked']:
+            password = st.text_input("Enter Admin Password", type="password")
+            if password == "1234":  # <--- PASSWORD IS HERE
+                st.session_state['admin_unlocked'] = True
+                st.rerun()
+            elif password:
+                st.error("Incorrect.")
+            st.stop() # Hides everything else until unlocked
+        else:
+            if st.button("🔒 Lock Admin"):
+                st.session_state['admin_unlocked'] = False
+                st.rerun()
     
     if st.button("🔄 Refresh Data"):
         auto_refresh()
@@ -65,13 +80,12 @@ if app_mode == "🛍️ Kiosk (iPad)":
     def go_shop(): st.session_state['kiosk_page'] = 'shop'
     def go_checkout(): st.session_state['kiosk_page'] = 'checkout'
     
-    # --- SUCCESS SCREEN (NEW) ---
+    # SUCCESS SCREEN
     if st.session_state['kiosk_page'] == 'success':
         st.balloons()
         st.title("✅ Order Complete!")
         st.success(f"Transaction recorded: #{st.session_state.get('last_order_id', '???')}")
         
-        # Receipt Button
         if 'last_invoice_pdf' in st.session_state:
             b64_pdf = base64.b64encode(st.session_state['last_invoice_pdf']).decode('utf-8')
             pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="400"></iframe>'
@@ -83,7 +97,7 @@ if app_mode == "🛍️ Kiosk (iPad)":
             go_shop()
             st.rerun()
 
-    # --- PAGE 1: SHOP ---
+    # SHOP
     elif st.session_state['kiosk_page'] == 'shop':
         c1, c2 = st.columns([4, 1])
         c1.title("Shop Kiosk")
@@ -115,7 +129,7 @@ if app_mode == "🛍️ Kiosk (iPad)":
                         st.toast(f"Added {q} {row['Name']}")
                         time.sleep(0.5); st.rerun()
 
-    # --- PAGE 2: CHECKOUT ---
+    # CHECKOUT
     elif st.session_state['kiosk_page'] == 'checkout':
         st.title("Checkout")
         if st.button("⬅️ Back"): go_shop(); st.rerun()
@@ -132,13 +146,10 @@ if app_mode == "🛍️ Kiosk (iPad)":
         with c_pay:
             sub = sum(i['qty']*i['price'] for i in st.session_state['kiosk_cart'])
             
-            # Tax Logic
             if 'settings' in st.session_state['data']:
                 s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
-                raw_rate = s_dict.get("TaxRate", "0.08"); venmo = s_dict.get("VenmoUser", "")
-                addr = s_dict.get("Address", "Modesto, CA")
-            else: raw_rate="0.08"; venmo=""; addr="Modesto, CA"
-            
+                raw_rate = s_dict.get("TaxRate", "0.08"); addr = s_dict.get("Address", "Modesto, CA")
+            else: raw_rate="0.08"; addr="Modesto, CA"
             try: tax_r = float(str(raw_rate).replace("%",""))
             except: tax_r=0.08
             
@@ -159,14 +170,10 @@ if app_mode == "🛍️ Kiosk (iPad)":
                     with st.spinner("Processing..."):
                         new_id = db.commit_sale(st.session_state['kiosk_cart'], total, tax, cid, pay, False, stat)
                         
-                        # GENERATE RECEIPT FOR SUCCESS SCREEN
                         pdf_bytes = db.create_invoice_pdf(new_id, sel_cust, addr, st.session_state['kiosk_cart'], sub, tax, total, "Paid")
                         st.session_state['last_invoice_pdf'] = pdf_bytes
-                        
                         st.session_state['last_order_id'] = new_id
                         st.session_state['kiosk_cart'] = []
-                        
-                        # Go to success page instead of auto-refresh
                         st.session_state['kiosk_page'] = 'success'
                         st.rerun()
                 else: st.error("Select Customer")
@@ -178,7 +185,7 @@ elif app_mode == "🔐 Admin HQ":
     
     menu = st.sidebar.radio("HQ Menu", ["📊 Dashboard", "📦 Inventory", "🛒 POS", "👥 Customers", "📝 Reports", "⚙️ Settings"])
     
-    # --- 1. DASHBOARD ---
+    # 1. DASHBOARD
     if menu == "📊 Dashboard":
         st.title("Manager Dashboard")
         df = st.session_state['data']['transactions']
@@ -195,10 +202,10 @@ elif app_mode == "🔐 Admin HQ":
         m2.metric("Orders", len(df_show))
         st.dataframe(df_show.sort_values("Timestamp", ascending=False).head(10), use_container_width=True, hide_index=True)
 
-    # --- 2. INVENTORY (UPDATED WITH RESTOCK) ---
+    # 2. INVENTORY
     elif menu == "📦 Inventory":
         st.title("Inventory")
-        t1, t2, t3 = st.tabs(["📋 Edit List", "➕ Add New Item", "🚚 Restock (Add Qty)"])
+        t1, t2, t3 = st.tabs(["📋 Edit List", "➕ Add New Item", "🚚 Restock"])
         
         with t1:
             df_inv = st.session_state['data']['inventory']
@@ -213,7 +220,7 @@ elif app_mode == "🔐 Admin HQ":
                 sku = c1.text_input("SKU")
                 name = c2.text_input("Name")
                 pr = c1.number_input("Retail Price", 0.0)
-                cost = c2.number_input("Unit Cost (For Profit Calc)", 0.0)
+                cost = c2.number_input("Unit Cost", 0.0)
                 whol = c1.number_input("Wholesale Price", 0.0)
                 stk = c2.number_input("Opening Stock", 0)
                 if st.form_submit_button("Create New Item"):
@@ -224,128 +231,177 @@ elif app_mode == "🔐 Admin HQ":
             st.subheader("Restock Existing Item")
             df_inv = st.session_state['data']['inventory']
             df_inv['lookup'] = df_inv['SKU'].astype(str) + " | " + df_inv['Name']
-            
-            sel_restock = st.selectbox("Select Item to Restock", df_inv['lookup'])
+            sel_restock = st.selectbox("Select Item", df_inv['lookup'])
             
             if sel_restock:
                 sku_r = sel_restock.split(" | ")[0]
                 row_r = df_inv[df_inv['SKU'].astype(str) == sku_r].iloc[0]
                 
-                st.info(f"Current Stock: {row_r['StockQty']} | Current Cost: ${float(row_r.get('Cost',0)):.2f}")
+                # SAFE COST DISPLAY (CRASH FIX)
+                try: 
+                    raw_cost = str(row_r.get('Cost', 0)).replace('$', '').replace(',', '')
+                    curr_cost = float(raw_cost) if raw_cost else 0.0
+                except: curr_cost = 0.0
+                
+                st.info(f"Current Stock: {row_r['StockQty']} | Current Cost: ${curr_cost:.2f}")
                 
                 with st.form("restock_form"):
                     c1, c2 = st.columns(2)
                     qty_add = c1.number_input("Quantity Arrived", 1, 10000)
-                    new_cost = c2.number_input("New Unit Cost ($)", 0.0, 1000.0, float(row_r.get('Cost', 0)))
+                    new_cost = c2.number_input("New Unit Cost ($)", 0.0, 1000.0, curr_cost)
                     
                     if st.form_submit_button("🚚 Add Stock"):
                         success, msg = db.restock_inventory(sku_r, qty_add, new_cost)
                         if success: st.success(msg); time.sleep(1); auto_refresh()
                         else: st.error(msg)
 
-    # --- 3. POS (UPDATED WITH SUCCESS SCREEN) ---
+    # 3. POS (ADMIN)
     elif menu == "🛒 POS":
         st.title("Point of Sale")
-        
-        # CHECK IF ORDER JUST COMPLETED
-        if st.session_state.get('last_order_id'):
-            st.balloons()
-            st.success(f"Order #{st.session_state['last_order_id']} Completed!")
+        c1, c2 = st.columns([1.5, 1])
+        with c1:
+            st.subheader("Add Item")
+            inv = st.session_state['data']['inventory']
+            inv['lookup'] = inv['SKU'].astype(str) + " | " + inv['Name']
+            selected_item_str = st.selectbox("Search Item", inv['lookup'], index=None)
+            is_wholesale = st.checkbox("Apply Wholesale Pricing?", value=False)
             
+            if selected_item_str:
+                sku_str = selected_item_str.split(" | ")[0].strip()
+                item_row = inv[inv['SKU'].astype(str) == sku_str].iloc[0]
+                with st.container(border=True):
+                    base_price = item_row['WholesalePrice'] if is_wholesale and item_row['WholesalePrice'] else item_row['Price']
+                    c_qty, c_price = st.columns(2)
+                    qty = c_qty.number_input("Quantity", 1, 1000, 1)
+                    final_price = c_price.number_input("Unit Price ($)", 0.0, 10000.0, float(base_price))
+                    if st.button("Add to Cart", type="primary", use_container_width=True):
+                        st.session_state['cart'].append({
+                            "sku": sku_str, "name": item_row['Name'], "qty": qty, "price": final_price, "total": qty * final_price
+                        })
+                        st.rerun()
+
+        with c2:
+            st.subheader("Order Summary")
+            if not st.session_state['cart']: st.info("Cart is empty.")
+            else:
+                subtotal = sum(item['total'] for item in st.session_state['cart'])
+                for i, item in enumerate(st.session_state['cart']):
+                    c_a, c_b = st.columns([3, 1])
+                    c_a.write(f"**{item['name']}** ({item['qty']} x ${item['price']:.2f})")
+                    c_b.write(f"${item['total']:.2f}")
+                
+                st.divider()
+                if 'settings' in st.session_state['data']:
+                    s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
+                    raw_rate = s_dict.get("TaxRate", "0.08"); addr = s_dict.get("Address", "Modesto, CA")
+                else: raw_rate = "0.08"; addr="Modesto, CA"
+                try: tax_rate = float(str(raw_rate).replace("%", "").strip())
+                except: tax_rate = 0.08
+                
+                apply_tax = st.checkbox(f"Apply Tax", value=not is_wholesale)
+                tax_amt = subtotal * tax_rate if apply_tax else 0.0
+                cart_total = subtotal + tax_amt
+                
+                cust = st.session_state['data']['customers']
+                selected_cust_name = st.selectbox("Customer", cust['Name'], index=None)
+                pay_method = st.selectbox("Payment", ["Cash", "Card", "Venmo", "Invoice"])
+                
+                st.metric("Total Due", f"${cart_total:.2f}")
+                
+                if st.button("✅ Complete Order", type="primary", use_container_width=True):
+                    if selected_cust_name:
+                        cid = cust[cust['Name']==selected_cust_name].iloc[0]['CustomerID']
+                        status = "Pending" if pay_method == "Invoice" else "Paid"
+                        with st.spinner("Processing..."):
+                            new_id = db.commit_sale(st.session_state['cart'], cart_total, tax_amt, cid, pay_method, is_wholesale, status)
+                            
+                            pdf_bytes = db.create_invoice_pdf(new_id, selected_cust_name, addr, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt")
+                            st.session_state['last_invoice_pdf'] = pdf_bytes
+                            st.session_state['last_order_id'] = new_id
+                            st.session_state['cart'] = []
+                            st.rerun()
+                    else: st.error("Select Customer")
+                    
+        # Success PDF View
+        if st.session_state.get('last_order_id'):
+            st.success(f"Order #{st.session_state['last_order_id']} Completed!")
             if 'last_invoice_pdf' in st.session_state:
                 b64_pdf = base64.b64encode(st.session_state['last_invoice_pdf']).decode('utf-8')
-                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="500"></iframe>'
+                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="400"></iframe>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
-            
-            if st.button("Start Next Order", type="primary"):
-                st.session_state['last_order_id'] = None
-                st.rerun()
-        
-        else:
-            c1, c2 = st.columns([1.5, 1])
-            with c1:
-                st.subheader("Add Item")
-                is_wholesale = st.checkbox("Apply Wholesale Pricing?", value=False)
-                inv = st.session_state['data']['inventory']
-                inv['lookup'] = inv['SKU'].astype(str) + " | " + inv['Name']
-                selected_item_str = st.selectbox("Search Item", inv['lookup'], index=None)
-                
-                if selected_item_str:
-                    sku_str = selected_item_str.split(" | ")[0].strip()
-                    item_row = inv[inv['SKU'].astype(str) == sku_str].iloc[0]
-                    with st.container(border=True):
-                        base_price = item_row['WholesalePrice'] if is_wholesale and item_row['WholesalePrice'] else item_row['Price']
-                        c_qty, c_price = st.columns(2)
-                        qty = c_qty.number_input("Quantity", 1, 1000, 1)
-                        final_price = c_price.number_input("Unit Price ($)", 0.0, 10000.0, float(base_price))
-                        if st.button("Add to Cart", type="primary", use_container_width=True):
-                            st.session_state['cart'].append({
-                                "sku": sku_str, "name": item_row['Name'], "qty": qty, "price": final_price, "total": qty * final_price
-                            })
-                            st.rerun()
 
-            with c2:
-                with st.container(border=True):
-                    st.subheader("Order Summary")
-                    if not st.session_state['cart']: st.info("Cart is empty.")
-                    else:
-                        subtotal = sum(item['total'] for item in st.session_state['cart'])
-                        for i, item in enumerate(st.session_state['cart']):
-                            c_a, c_b = st.columns([3, 1])
-                            c_a.write(f"**{item['name']}** ({item['qty']} x ${item['price']:.2f})")
-                            c_b.write(f"${item['total']:.2f}")
-                        
-                        st.divider()
-                        
-                        if 'settings' in st.session_state['data']:
-                            s_df = st.session_state['data']['settings']
-                            settings_cache = dict(zip(s_df['Key'], s_df['Value']))
-                            raw_rate = settings_cache.get("TaxRate", "0.08")
-                            venmo_user = settings_cache.get("VenmoUser", "")
-                            addr = settings_cache.get("Address", "Modesto, CA")
-                        else: raw_rate = "0.08"; venmo_user = ""; addr="Modesto, CA"
-                        
-                        try: tax_rate = float(str(raw_rate).replace("%", "").strip())
-                        except: tax_rate = 0.08
-                        
-                        apply_tax = st.checkbox(f"Apply Tax", value=not is_wholesale)
-                        tax_amt = subtotal * tax_rate if apply_tax else 0.0
-                        cart_total = subtotal + tax_amt
-                        
-                        # Customer
-                        cust = st.session_state['data']['customers']
-                        selected_cust_name = st.selectbox("Customer", cust['Name'], index=None)
-                        
-                        st.write(f"Sub: ${subtotal:.2f}"); st.write(f"Tax: ${tax_amt:.2f}")
-                        st.metric("Total Due", f"${cart_total:.2f}")
-                        
-                        pay_method = st.selectbox("Payment", ["Cash", "Card", "Venmo", "Invoice"])
-                        
-                        if st.button("✅ Complete Order", type="primary", use_container_width=True):
-                            if selected_cust_name:
-                                cid = cust[cust['Name']==selected_cust_name].iloc[0]['CustomerID']
-                                status = "Pending" if pay_method == "Invoice" else "Paid"
-                                with st.spinner("Processing..."):
-                                    new_id = db.commit_sale(
-                                        st.session_state['cart'], cart_total, tax_amt, cid, 
-                                        pay_method, is_wholesale, status
-                                    )
-                                    
-                                    # Generate PDF for View
-                                    pdf_bytes = db.create_invoice_pdf(new_id, selected_cust_name, addr, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt")
-                                    st.session_state['last_invoice_pdf'] = pdf_bytes
-                                    st.session_state['last_order_id'] = new_id
-                                    st.session_state['cart'] = []
-                                    st.rerun()
-                            else: st.error("Select Customer")
-
-    # --- 4. CUSTOMERS ---
+    # 4. CUSTOMERS (RESTORED CARD VIEW)
     elif menu == "👥 Customers":
-        st.title("Customers")
-        st.info("Use Kiosk Mode or Search Bar in future updates.") 
-        # (Keeping this brief to save space, previous logic applies if you want to paste it back)
+        st.title("Customer Management")
+        if 'active_cust_id' not in st.session_state: st.session_state['active_cust_id'] = None
+        
+        df_cust = st.session_state['data']['customers']
+        df_trans = st.session_state['data']['transactions']
+        
+        # VIEW A: CARD LIST
+        if st.session_state['active_cust_id'] is None:
+            c_search, c_add = st.columns([3, 1], vertical_alignment="bottom")
+            search_q = c_search.text_input("🔍 Search Customers", placeholder="Name or Phone...")
+            with c_add:
+                with st.popover("➕ New Customer", use_container_width=True):
+                    with st.form("quick_c"):
+                        n=st.text_input("Name"); e=st.text_input("Email")
+                        if st.form_submit_button("Create"): db.add_customer(n, e); st.success("Done"); auto_refresh()
 
-    # --- 5. REPORTS (UPDATED) ---
+            if search_q:
+                mask = df_cust['Name'].astype(str).str.contains(search_q, case=False)
+                filtered = df_cust[mask]
+            else: filtered = df_cust
+            
+            if filtered.empty: st.info("No customers found.")
+            else:
+                for i, row in filtered.head(50).iterrows():
+                    with st.container(border=True):
+                        c1, c2, c3 = st.columns([3, 1, 1])
+                        c1.subheader(row['Name']); c1.caption(f"📞 {row['Phone']}")
+                        try: cred = float(row.get('Credit', 0) or 0)
+                        except: cred = 0.0
+                        c2.metric("Credit", f"${cred:.2f}")
+                        if c3.button("Manage", key=f"m_{row['CustomerID']}"):
+                            st.session_state['active_cust_id'] = row['CustomerID']
+                            st.rerun()
+                            
+        # VIEW B: PROFILE
+        else:
+            cid = st.session_state['active_cust_id']
+            row = df_cust[df_cust['CustomerID'] == cid].iloc[0]
+            if st.button("⬅️ Back"): st.session_state['active_cust_id'] = None; st.rerun()
+            st.title(row['Name'])
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                with st.form(f"e_{cid}"):
+                    nn=st.text_input("Name", row['Name'])
+                    pp=st.text_input("Phone", str(row.get('Phone','')))
+                    aa=st.text_area("Address", str(row.get('Address','')))
+                    nt=st.text_area("Notes", str(row.get('Notes','')))
+                    if st.form_submit_button("Save"):
+                        db.update_customer_details(cid, nn, aa, pp, nt); st.success("Saved!"); auto_refresh()
+                
+                with st.expander("Delete Profile"):
+                    if st.checkbox("Confirm Delete?"):
+                        if st.button("Delete Permanently", type="primary"):
+                            db.delete_customer(cid); st.session_state['active_cust_id']=None; auto_refresh()
+            
+            with c2:
+                st.subheader("History")
+                my_t = df_trans[df_trans['CustomerID'] == cid]
+                if my_t.empty: st.info("No history.")
+                else:
+                    for i, t in my_t.sort_values("Timestamp", ascending=False).iterrows():
+                        with st.container(border=True):
+                            c_a, c_b, c_c = st.columns([2,1,1])
+                            c_a.write(f"**{t['Timestamp']}**"); c_a.caption(f"#{t['TransactionID']}")
+                            c_b.write(f"${t['TotalAmount']}")
+                            if c_c.button("Del", key=f"dt_{t['TransactionID']}"):
+                                db.delete_invoice(t['TransactionID']); st.warning("Deleted"); auto_refresh()
+
+    # 5. REPORTS
     elif menu == "📝 Reports":
         st.title("Financial Reports")
         tab1, tab2, tab3 = st.tabs(["📄 Income Statement", "🏛️ Sales Tax Split", "📉 Expense Log"])
@@ -353,79 +409,65 @@ elif app_mode == "🔐 Admin HQ":
         with tab1:
             st.header("Income Statement")
             c1, c2 = st.columns(2)
-            d_start = c1.date_input("Start Date", value=date(date.today().year, 1, 1))
-            d_end = c2.date_input("End Date", value=date.today())
-            
+            d_start = c1.date_input("Start", date(date.today().year, 1, 1))
+            d_end = c2.date_input("End", date.today())
             if st.button("Generate Statement"):
-                # Filter Transactions
                 df_t = st.session_state['data']['transactions'].copy()
                 df_t['DateObj'] = pd.to_datetime(df_t['Timestamp']).dt.date
                 df_t = df_t[(df_t['DateObj'] >= d_start) & (df_t['DateObj'] <= d_end)]
+                rev = pd.to_numeric(df_t['TotalAmount'], errors='coerce').sum()
                 
-                revenue = pd.to_numeric(df_t['TotalAmount'], errors='coerce').sum()
-                
-                # Filter Items for COGS (Using Cost column if available)
                 df_i = st.session_state['data']['items'].copy()
-                # Join with transactions to filter by date
-                df_i['TransactionID'] = df_i['TransactionID'].astype(str)
-                df_t['TransactionID'] = df_t['TransactionID'].astype(str)
+                df_i['TransactionID'] = df_i['TransactionID'].astype(str); df_t['TransactionID'] = df_t['TransactionID'].astype(str)
                 merged = df_i.merge(df_t[['TransactionID']], on='TransactionID', how='inner')
-                
-                # Sum COGS (Cost * Qty)
-                # Note: This relies on 'Cost' being in TransactionItems. If empty, it's 0.
                 if 'Cost' in merged.columns:
-                    merged['CostTotal'] = pd.to_numeric(merged['Cost'], errors='coerce') * pd.to_numeric(merged['QtySold'], errors='coerce')
-                    cogs = merged['CostTotal'].sum()
-                else:
-                    cogs = 0.0
-                    st.warning("⚠️ No 'Cost' data found in sales items. COGS is $0.")
-
-                # Filter Expenses
+                    cogs = (pd.to_numeric(merged['Cost'], errors='coerce') * pd.to_numeric(merged['QtySold'], errors='coerce')).sum()
+                else: cogs = 0.0
+                
                 df_e = st.session_state['data']['expenses'].copy()
                 if not df_e.empty:
                     df_e['DateObj'] = pd.to_datetime(df_e['Date']).dt.date
                     df_e = df_e[(df_e['DateObj'] >= d_start) & (df_e['DateObj'] <= d_end)]
                 
-                pdf_data = db.create_income_statement_pdf(str(d_start), str(d_end), revenue, cogs, df_e)
+                pdf_data = db.create_income_statement_pdf(str(d_start), str(d_end), rev, cogs, df_e)
                 b64 = base64.b64encode(pdf_data).decode('utf-8')
                 st.markdown(f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="600"></iframe>', unsafe_allow_html=True)
 
         with tab2:
-            st.header("Sales Tax Report")
+            st.header("Tax Report")
             c1, c2 = st.columns(2)
-            t_start = c1.date_input("Start", value=date(date.today().year, 1, 1), key="tax_s")
-            t_end = c2.date_input("End", value=date.today(), key="tax_e")
+            t_start = c1.date_input("Start", date(date.today().year, 1, 1), key="t_s")
+            t_end = c2.date_input("End", date.today(), key="t_e")
             
             df_t = st.session_state['data']['transactions'].copy()
             df_t['DateObj'] = pd.to_datetime(df_t['Timestamp']).dt.date
             df_t = df_t[(df_t['DateObj'] >= t_start) & (df_t['DateObj'] <= t_end)]
             
-            # SPLIT LOGIC
-            # Wholesale column is "TRUE" string or "FALSE" string
-            retail_sales = df_t[df_t['Wholesale'] == "FALSE"]
-            whole_sales = df_t[df_t['Wholesale'] == "TRUE"]
+            # SAFE WHOLESALE CHECK (CRASH FIX)
+            if 'Wholesale' not in df_t.columns: df_t['Wholesale'] = "FALSE"
             
-            ret_rev = pd.to_numeric(retail_sales['TotalAmount'], errors='coerce').sum()
-            whol_rev = pd.to_numeric(whole_sales['TotalAmount'], errors='coerce').sum()
-            tax_coll = pd.to_numeric(df_t['TaxAmount'], errors='coerce').sum()
+            ret = df_t[df_t['Wholesale'] == "FALSE"]
+            whl = df_t[df_t['Wholesale'] == "TRUE"]
+            
+            ret_rev = pd.to_numeric(ret['TotalAmount'], errors='coerce').sum()
+            whl_rev = pd.to_numeric(whl['TotalAmount'], errors='coerce').sum()
+            tax_c = pd.to_numeric(df_t['TaxAmount'], errors='coerce').sum()
             
             c1, c2, c3 = st.columns(3)
-            c1.metric("Retail Sales (Taxable)", f"${ret_rev:,.2f}")
-            c2.metric("Wholesale (Non-Taxable)", f"${whol_rev:,.2f}")
-            c3.metric("Tax Collected", f"${tax_coll:,.2f}")
+            c1.metric("Retail (Taxable)", f"${ret_rev:,.2f}")
+            c2.metric("Wholesale (No Tax)", f"${whl_rev:,.2f}")
+            c3.metric("Tax Collected", f"${tax_c:,.2f}")
 
         with tab3:
             st.subheader("Log Expense")
-            with st.form("exp_form"):
+            with st.form("ex"):
                 d = st.date_input("Date")
-                cat = st.selectbox("Category", ["Fabric", "Notions", "Advertising", "Office Supplies", "Rent", "Owner's Draw", "Other"])
-                amt = st.number_input("Amount", 0.0)
-                desc = st.text_input("Description")
-                if st.form_submit_button("Log Expense"):
-                    db.add_expense(d, cat, amt, desc)
-                    st.success("Logged!"); auto_refresh()
+                c = st.selectbox("Category", ["Fabric", "Notions", "Advertising", "Rent", "Other"])
+                a = st.number_input("Amount", 0.0)
+                desc = st.text_input("Desc")
+                if st.form_submit_button("Log"): db.add_expense(d, c, a, desc); st.success("Logged"); auto_refresh()
 
-    # --- 6. SETTINGS ---
+    # 6. SETTINGS
     elif menu == "⚙️ Settings":
         st.title("Settings")
-        st.info("Edit Tax Rate and Address here.")
+        st.info("Edit Tax Rate in Google Sheets 'Settings' tab.")
