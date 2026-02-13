@@ -41,69 +41,107 @@ def show_pdf_viewer(pdf_bytes):
     with st.expander("📄 Preview Invoice", expanded=True):
         st.markdown(f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500"></iframe>', unsafe_allow_html=True)
 
+# ==========================================
+# 🛍️ MODE 1: THE KIOSK
+# ==========================================
 if app_mode == "🛍️ Kiosk (iPad)":
-    # [KIOSK CODE UNCHANGED - Same as before]
-    if 'kiosk_page' not in st.session_state: st.session_state['kiosk_page'] = 'shop'
-    def go_shop(): st.session_state['kiosk_page'] = 'shop'
-    def go_checkout(): st.session_state['kiosk_page'] = 'checkout'
+    # --- KIOSK LOGIC (Simplified for Single File) ---
+    if 'page' not in st.session_state: st.session_state['page'] = 'shop'
     
-    if st.session_state['kiosk_page'] == 'success':
-        st.balloons(); st.title("✅ Order Complete!")
-        st.success(f"Transaction recorded: #{st.session_state.get('last_order_id', '???')}")
-        if 'last_invoice_pdf' in st.session_state: show_pdf_viewer(st.session_state['last_invoice_pdf'])
-        if st.button("🏠 Start New Order", type="primary"): st.session_state['last_order_id']=None; go_shop(); st.rerun()
+    def go_shop(): st.session_state['page'] = 'shop'
+    def go_checkout(): st.session_state['page'] = 'checkout'
+    
+    # HEADER
+    c1, c2 = st.columns([4, 1])
+    c1.title("Shop Kiosk")
+    cart_count = sum(item['qty'] for item in st.session_state['kiosk_cart'])
+    if c2.button(f"🛒 Cart ({cart_count})", type="primary", use_container_width=True):
+        go_checkout(); st.rerun()
 
-    elif st.session_state['kiosk_page'] == 'shop':
-        c1, c2 = st.columns([4, 1])
-        c1.title("Shop Kiosk")
-        if c2.button(f"🛒 Cart ({sum(i['qty'] for i in st.session_state['kiosk_cart'])})", type="primary"): go_checkout(); st.rerun()
+    # KIOSK PAGE 1: SHOP
+    if st.session_state['page'] == 'shop':
+        st.markdown("### 🔍 Scan or Search")
         df = st.session_state['data']['inventory'].copy()
         df['lookup'] = df['SKU'].astype(str) + " | " + df['Name']
-        search = st.selectbox("Search", df['lookup'], index=None, placeholder="Tap to search...", label_visibility="collapsed")
+        
+        # Search Box
+        search = st.selectbox("Find Item...", df['lookup'], index=None, placeholder="Tap to search...", label_visibility="collapsed")
+        
         if search:
             sku = search.split(" | ")[0]
             row = df[df['SKU'].astype(str).str.strip() == sku.strip()].iloc[0]
+            
+            # Big Item Card
             st.divider()
             with st.container(border=True):
-                c_det, c_add = st.columns([2, 1])
-                c_det.subheader(row['Name']); c_det.markdown(f"## ${row['Price']:.2f}")
+                c_img, c_det, c_add = st.columns([1, 2, 2])
+                c_det.subheader(row['Name']); c_det.caption(f"SKU: {row['SKU']}")
+                c_det.markdown(f"## ${row['Price']:.2f}")
+                
                 with c_add:
-                    q = st.number_input("Qty", 1, 100, 1, key="kq_main")
-                    if st.button("➕ ADD", type="primary"):
-                        st.session_state['kiosk_cart'].append({"sku": row['SKU'], "name": row['Name'], "price": row['Price'], "qty": q})
-                        st.toast(f"Added {q} {row['Name']}"); time.sleep(0.5); st.rerun()
+                    q = st.number_input("Qty", 1, 100, 1, key="k_q_main")
+                    st.write("")
+                    if st.button("➕ ADD TO CART", type="primary", use_container_width=True):
+                        st.session_state['kiosk_cart'].append({
+                            "sku": row['SKU'], "name": row['Name'], 
+                            "price": row['Price'], "qty": q
+                        })
+                        st.toast(f"Added {q} {row['Name']}")
+                        time.sleep(0.5); st.rerun()
 
-    elif st.session_state['kiosk_page'] == 'checkout':
-        st.title("Checkout"); 
-        if st.button("⬅️ Back"): go_shop(); st.rerun()
+    # KIOSK PAGE 2: CHECKOUT
+    elif st.session_state['page'] == 'checkout':
+        st.title("Checkout")
+        if st.button("⬅️ Back to Shop"): go_shop(); st.rerun()
+        st.divider()
+        
         c_list, c_pay = st.columns([1.5, 1])
+        
         with c_list:
+            if not st.session_state['kiosk_cart']: st.info("Empty Cart")
             for i, item in enumerate(st.session_state['kiosk_cart']):
                 with st.container(border=True):
-                    c1, c2 = st.columns([3, 1])
-                    c1.write(f"**{item['name']}** ({item['qty']}x)"); c2.button("🗑️", key=f"kd_{i}", on_click=lambda: st.session_state['kiosk_cart'].pop(i) and st.rerun())
+                    cl1, cl2, cl3 = st.columns([3, 1, 1])
+                    cl1.write(f"**{item['name']}** ({item['qty']}x)")
+                    cl2.write(f"${item['qty']*item['price']:.2f}")
+                    if cl3.button("🗑️", key=f"kdel_{i}"):
+                        st.session_state['kiosk_cart'].pop(i); st.rerun()
+
         with c_pay:
-            sub = sum(i['qty']*i['price'] for i in st.session_state['kiosk_cart'])
+            subtotal = sum(item['qty']*item['price'] for item in st.session_state['kiosk_cart'])
+            
+            # Tax Logic
             if 'settings' in st.session_state['data']:
-                s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
-                raw_rate = s_dict.get("TaxRate", "0.08"); addr = s_dict.get("Address", "Modesto, CA")
-            else: raw_rate="0.08"; addr="Modesto, CA"
-            try: tax_r = float(str(raw_rate).replace("%",""))
-            except: tax_r=0.08
-            tax = sub * tax_r; total = sub + tax
-            st.write(f"Sub: ${sub:.2f}"); st.write(f"Tax: ${tax:.2f}"); st.metric("Total", f"${total:.2f}")
-            sel_cust = st.selectbox("Customer", st.session_state['data']['customers']['Name'], index=None)
+                s_df = st.session_state['data']['settings']
+                s_dict = dict(zip(s_df['Key'], s_df['Value']))
+                raw_rate = s_dict.get("TaxRate", "0.08"); venmo = s_dict.get("VenmoUser", "")
+            else: raw_rate = "0.08"; venmo = ""
+            try: tax_rate = float(str(raw_rate).replace("%",""))/100 if float(str(raw_rate).replace("%",""))>1 else float(str(raw_rate).replace("%",""))
+            except: tax_rate=0.0
+            
+            tax = subtotal * tax_rate
+            total = subtotal + tax
+            
+            st.write(f"Subtotal: ${subtotal:.2f}"); st.write(f"Tax: ${tax:.2f}")
+            st.metric("Total", f"${total:.2f}")
+            
+            # Customer
+            cust_list = st.session_state['data']['customers']['Name']
+            sel_cust = st.selectbox("Customer Name", cust_list, index=None)
+            
+            # Pay
             pay = st.radio("Method", ["Cash", "Venmo", "Invoice"], horizontal=True)
-            if st.button("✅ Finish", type="primary"):
+            if pay == "Venmo" and venmo:
+                st.image(f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://venmo.com/u/{venmo}", width=120)
+
+            if st.button("✅ Finish", type="primary", use_container_width=True):
                 if sel_cust:
                     cid = st.session_state['data']['customers'][st.session_state['data']['customers']['Name']==sel_cust].iloc[0]['CustomerID']
-                    stat = "Pending" if pay == "Invoice" else "Paid"
+                    status = "Pending" if pay == "Invoice" else "Paid"
                     with st.spinner("Processing..."):
-                        new_id = db.commit_sale(st.session_state['kiosk_cart'], total, tax, cid, pay, False, stat)
-                        pdf_bytes = db.create_invoice_pdf(new_id, sel_cust, addr, st.session_state['kiosk_cart'], sub, tax, total, "Paid")
-                        st.session_state['last_invoice_pdf'] = pdf_bytes
-                        st.session_state['last_order_id'] = new_id
-                        st.session_state['kiosk_cart'] = []; st.session_state['kiosk_page'] = 'success'; st.rerun()
+                        new_id = db.commit_sale(st.session_state['kiosk_cart'], total, tax, cid, pay, False, status)
+                        st.session_state['kiosk_cart'] = []
+                        st.success("Done!"); time.sleep(2); go_shop(); auto_refresh()
                 else: st.error("Select Customer")
 
 elif app_mode == "🔐 Admin HQ":
