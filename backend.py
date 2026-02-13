@@ -60,22 +60,13 @@ def add_inventory_item(sku, name, price, stock, wholesale_price):
     return force_refresh()
 
 def update_inventory_batch(df_changes):
-    """
-    SAFELY updates inventory without clearing the sheet first.
-    This prevents 'blank sheet' crashes if the connection drops.
-    """
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Inventory")
-    
-    # Prepare data
     headers = [df_changes.columns.tolist()]
     values = df_changes.astype(str).values.tolist()
-    all_data = headers + values
-    
-    # Update range directly (A1 to End)
-    # This overwrites existing data safely without a separate 'clear' call
-    ws.update(values=all_data, range_name=f"A1")
+    ws.clear()
+    ws.update(values=headers + values, range_name="A1")
     return force_refresh()
 
 def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status="Paid", credit_used=0.0):
@@ -130,7 +121,7 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
             updates.append({'range': f'D{row_num}', 'values': [[max(0, curr_stock - item['qty'])]]})
     if updates: ws_inv.batch_update(updates)
             
-    return invoice_id 
+    return invoice_id # Note: commit_sale doesn't return force_refresh bool, but cache is cleared inside next call
 
 def mark_invoice_paid(invoice_id):
     client = get_client()
@@ -139,7 +130,7 @@ def mark_invoice_paid(invoice_id):
     try:
         cell = ws.find(str(invoice_id))
         ws.update_cell(cell.row, 6, "Paid")
-        return True # Note: We do NOT force refresh here to allow optimistic UI updates
+        return force_refresh()
     except: return False
 
 def delete_invoice(invoice_id):
