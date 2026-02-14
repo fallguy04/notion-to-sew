@@ -374,7 +374,7 @@ elif st.session_state['page'] == 'success':
             if st.session_state.get('view_kiosk_receipt'):
                 pdf_data = st.session_state['last_kiosk_order']['pdf']
                 b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-                st.markdown(f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="500"></iframe>', unsafe_allow_html=True)
+                st.markdown(f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
                 if st.button("Close Receipt"):
                     st.session_state['view_kiosk_receipt'] = False
                     st.rerun()
