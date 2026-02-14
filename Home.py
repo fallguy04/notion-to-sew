@@ -229,7 +229,7 @@ elif menu == "🛒 Checkout":
         if st.session_state.get('view_last_invoice'):
             st.divider()
             b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-            st.markdown(f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600"></iframe>', unsafe_allow_html=True)
+            st.markdown(f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
             if st.button("❌ Close Preview"):
                 st.session_state['view_last_invoice'] = False
                 st.rerun()
@@ -595,7 +595,7 @@ elif menu == "👥 Customers":
                                 
                                 pdf = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
                                 b64 = base64.b64encode(pdf).decode('utf-8')
-                                st.markdown(f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="500"></iframe>', unsafe_allow_html=True)
+                                st.markdown(f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
 
 # ==========================================
 # 5. REPORTS
@@ -604,7 +604,7 @@ elif menu == "📝 Reports":
     st.title("Financial Reports")
     tab1, tab2, tab3, tab4 = st.tabs(["💰 Income Statement", "🏛️ Sales Tax", "📈 Top Sellers", "⏳ Unpaid"])
     
-    # --- TAB 1: INCOME STATEMENT (Updated) ---
+# --- TAB 1: INCOME STATEMENT (New!) ---
     with tab1:
         st.header("Income Statement")
         
@@ -625,19 +625,14 @@ elif menu == "📝 Reports":
             f_trans = df_trans[mask_t]
             
             # B. Calculate Revenue (Split Retail vs Wholesale)
-            # Ensure numeric
             f_trans['TotalAmount'] = pd.to_numeric(f_trans['TotalAmount'], errors='coerce').fillna(0)
             f_trans['TaxAmount'] = pd.to_numeric(f_trans['TaxAmount'], errors='coerce').fillna(0)
             
-            # Wholesale Logic: Look for 'IsWholesale' flag OR 'Wholesale' column
+            # Identify Wholesale (Check column existence safely)
             if 'IsWholesale' in f_trans.columns:
                 ws_mask = f_trans['IsWholesale'].astype(str).str.lower() == 'true'
-            elif 'Wholesale' in f_trans.columns:
-                ws_mask = f_trans['Wholesale'].astype(str).str.lower() == 'true'
-            else:
-                ws_mask = pd.Series([False] * len(f_trans))
+            else: ws_mask = pd.Series([False] * len(f_trans))
             
-            # Revenue Calculation
             # Net Sales = Total - Tax
             f_trans['NetSale'] = f_trans['TotalAmount'] - f_trans['TaxAmount']
             
@@ -646,76 +641,66 @@ elif menu == "📝 Reports":
             total_income = wholesale_sales + retail_sales
             
             # C. Calculate COGS
-            # We need to link Transactions -> Items -> Cost
             # Filter Items by the valid Transaction IDs
             valid_ids = f_trans['TransactionID'].astype(str).tolist()
             df_items['TransactionID'] = df_items['TransactionID'].astype(str)
             f_items = df_items[df_items['TransactionID'].isin(valid_ids)].copy()
             
-            # Merge with Inventory to get 'Cost' if not present in transaction items
-            # (Note: Best practice is to store Cost at time of sale, but looking up current cost is the fallback)
-            inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost']].copy()
-            inv_ref['SKU'] = inv_ref['SKU'].astype(str)
-            f_items['SKU'] = f_items['SKU'].astype(str)
+            # Merge with Inventory to get 'Cost'
+            if 'inventory' in st.session_state['data']:
+                inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost']].copy()
+                inv_ref['SKU'] = inv_ref['SKU'].astype(str)
+                f_items['SKU'] = f_items['SKU'].astype(str)
+                merged_items = f_items.merge(inv_ref, on='SKU', how='left')
+                merged_items['QtySold'] = pd.to_numeric(merged_items['QtySold'], errors='coerce').fillna(0)
+                merged_items['LineCost'] = merged_items['QtySold'] * pd.to_numeric(merged_items['Cost'], errors='coerce').fillna(0)
+                total_cogs = merged_items['LineCost'].sum()
+            else: total_cogs = 0.0
             
-            # Clean Qty
-            f_items['QtySold'] = pd.to_numeric(f_items['QtySold'], errors='coerce').fillna(0)
-            
-            merged_items = f_items.merge(inv_ref, on='SKU', how='left')
-            # Calculate Line Cost
-            merged_items['LineCost'] = merged_items['QtySold'] * pd.to_numeric(merged_items['Cost'], errors='coerce').fillna(0)
-            
-            total_cogs = merged_items['LineCost'].sum()
             gross_profit = total_income - total_cogs
             
             # D. Expenses
             expenses_breakdown = {}
             total_expenses = 0.0
-            
             if not df_exp.empty:
                 df_exp['DateObj'] = pd.to_datetime(df_exp['Date']).dt.date
                 mask_e = (df_exp['DateObj'] >= r_start) & (df_exp['DateObj'] <= r_end)
                 f_exp = df_exp[mask_e].copy()
                 f_exp['Amount'] = pd.to_numeric(f_exp['Amount'], errors='coerce').fillna(0)
-                
-                # Group by Category
                 expenses_breakdown = f_exp.groupby('Category')['Amount'].sum().to_dict()
                 total_expenses = sum(expenses_breakdown.values())
             
             net_profit = gross_profit - total_expenses
             
-            # E. Display Preview
+            # E. Generate PDF
+            financials = {
+                'retail_sales': retail_sales, 'wholesale_sales': wholesale_sales,
+                'total_income': total_income, 'cogs': total_cogs,
+                'gross_profit': gross_profit, 'expenses_breakdown': expenses_breakdown,
+                'total_expenses': total_expenses, 'net_profit': net_profit
+            }
+            
+            pdf_data = db.generate_income_statement_pdf(r_start, r_end, financials)
+            
+            # F. Preview & Download
             st.divider()
             c_a, c_b, c_c = st.columns(3)
             c_a.metric("Total Revenue", f"${total_income:,.2f}")
             c_b.metric("COGS", f"${total_cogs:,.2f}")
             c_c.metric("Net Profit", f"${net_profit:,.2f}", delta_color="normal")
             
-            # F. Generate PDF
-            financials = {
-                'retail_sales': retail_sales,
-                'wholesale_sales': wholesale_sales,
-                'total_income': total_income,
-                'cogs': total_cogs,
-                'gross_profit': gross_profit,
-                'expenses_breakdown': expenses_breakdown,
-                'total_expenses': total_expenses,
-                'net_profit': net_profit
-            }
-            
-            pdf_data = db.generate_income_statement_pdf(r_start, r_end, financials)
+            # Viewer (Fixed for Chrome)
+            b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
+            st.markdown(f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
             
             st.download_button(
-                "📄 Download Official PDF Report",
-                data=pdf_data,
+                "⬇️ Download PDF", data=pdf_data,
                 file_name=f"IncomeStatement_{r_start}_{r_end}.pdf",
-                mime="application/pdf",
-                type="primary",
-                use_container_width=True
+                mime="application/pdf", type="primary", use_container_width=True
             )
             
-            # G. Expense Logger (Moved to bottom of report)
-            with st.expander("➕ Log New Expense"):
+            # G. Expense Logger
+            with st.expander("➕ Log Expense"):
                 with st.form("expense_form_rep"):
                     c1, c2 = st.columns(2)
                     ex_date = c1.date_input("Date")
@@ -808,7 +793,7 @@ elif menu == "📝 Reports":
                         else: addr = "Modesto, CA"
                         pdf_bytes = db.create_pdf(t_id, cust_name, addr, cart_rebuild, 0, tax_val, float(row['TotalAmount']), str(row.get('DueDate', '')))
                         b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-                        st.markdown(f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600"></iframe>', unsafe_allow_html=True)
+                        st.markdown(f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
 
 # ==========================================
 # 6. SETTINGS
