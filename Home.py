@@ -330,7 +330,7 @@ elif menu == "🛒 Checkout":
                     if pay_method == "Venmo" and venmo_user:
                         st.image(f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://venmo.com/u/{venmo_user}", width=150, caption=f"@{venmo_user}")
 
-                    if st.button("✅ Complete Order", type="primary", use_container_width=True):
+i                   if st.button("✅ Complete Order", type="primary", use_container_width=True):
                         if selected_cust or pay_method == "Cash": # Allow Cash Guest checkout
                             # Handle Guest
                             if not selected_cust: cust_id = "Guest"; selected_cust = "Guest"
@@ -341,18 +341,16 @@ elif menu == "🛒 Checkout":
                                     st.session_state['cart'], cart_total, tax_amt, cust_id, 
                                     pay_method, is_wholesale, status, credit_used=credit_applied
                                 )
-                    # Preview Modal
-                    if st.session_state.get('view_last_invoice'):
-                        st.divider()
-                        # Use the raw bytes from session state
-                        pdf_viewer(input=st.session_state['last_order']['pdf'], width=700, height=600)
-                        
-                        if st.button("❌ Close Preview"):
-                            st.session_state['view_last_invoice'] = False
-                            st.rerun()
+                                # Generate PDF immediately for the success screen
+                                if 'settings' in st.session_state['data']:
+                                    s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
+                                    address = s_dict.get("Address", "Modesto, CA")
+                                else: address = "Modesto, CA"
                                 
-                            # STORE STATE INSTEAD OF DOWNLOADING IMMEDIATELY
-                            st.session_state['last_order'] = {
+                                pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied)
+                                
+                                # STORE STATE & TRIGGER SUCCESS SCREEN
+                                st.session_state['last_order'] = {
                                     'id': new_id,
                                     'pdf': pdf_bytes
                                 }
