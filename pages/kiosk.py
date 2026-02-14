@@ -358,7 +358,6 @@ elif st.session_state['page'] == 'checkout':
 # ==========================================
 elif st.session_state['page'] == 'success':
     # Simple, clear success screen
-    st.balloons()
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         with st.container(border=True):
