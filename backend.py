@@ -294,3 +294,145 @@ def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, 
         pdf.cell(165, 6, "Store Credit Used:", 0, 0, 'R'); pdf.cell(25, 6, f"-${credit_applied:.2f}", 0, 1, 'R')
     pdf.set_font("Helvetica", "B", 12); pdf.cell(165, 8, "AMOUNT DUE:", 0, 0, 'R'); pdf.cell(25, 8, f"${max(0.0, total - credit_applied):.2f}", 0, 1, 'R')
     return pdf.output(dest='S').encode('latin-1')
+
+# ==========================================
+# REPORT GENERATION
+# ==========================================
+def generate_financial_report(start_date, end_date):
+    """
+    Generates a PDF Income Statement based on the user's specific layout.
+    """
+    # 1. FETCH DATA
+    client = get_client()
+    sh = client.open("NotionToSew_DB")
+    
+    # Load Dataframes
+    trans_df = pd.DataFrame(sh.worksheet("Transactions").get_all_records())
+    items_df = pd.DataFrame(sh.worksheet("TransactionItems").get_all_records())
+    inv_df = pd.DataFrame(sh.worksheet("Inventory").get_all_records())
+    exp_df = pd.DataFrame(sh.worksheet("Expenses").get_all_records())
+    
+    # Filter by Date
+    trans_df['Date'] = pd.to_datetime(trans_df['Timestamp']).dt.date
+    exp_df['Date'] = pd.to_datetime(exp_df['Date']).dt.date
+    
+    # Convert inputs to date objects
+    s_date = pd.to_datetime(start_date).date()
+    e_date = pd.to_datetime(end_date).date()
+    
+    # Slice Data
+    period_trans = trans_df[(trans_df['Date'] >= s_date) & (trans_df['Date'] <= e_date)]
+    period_exp = exp_df[(exp_df['Date'] >= s_date) & (exp_df['Date'] <= e_date)]
+    
+    # Get Transaction IDs for this period
+    valid_ids = period_trans['TransactionID'].tolist()
+    period_items = items_df[items_df['TransactionID'].isin(valid_ids)]
+    
+    # --- CALCULATIONS ---
+    
+    # A. REVENUE
+    # We strip out commas and convert to float
+    def clean_float(x):
+        try: return float(str(x).replace(",", "").replace("$", ""))
+        except: return 0.0
+
+    total_revenue = period_trans['TotalAmount'].apply(clean_float).sum()
+    tax_collected = period_trans['TaxAmount'].apply(clean_float).sum()
+    net_sales = total_revenue - tax_collected # Revenue usually excludes sales tax collected
+    
+    # B. COST OF GOODS SOLD (COGS)
+    # Merge Sold Items with Inventory to get current Cost
+    # Note: This uses CURRENT cost. If cost changed, it won't reflect historical cost (Static Cost limitation)
+    inv_cost_map = dict(zip(inv_df['SKU'].astype(str), inv_df['Cost'].apply(clean_float)))
+    
+    cogs_total = 0.0
+    for idx, row in period_items.iterrows():
+        sku = str(row['SKU'])
+        qty = float(row['QtySold'])
+        unit_cost = inv_cost_map.get(sku, 0.0)
+        cogs_total += (qty * unit_cost)
+        
+    gross_profit = net_sales - cogs_total
+    
+    # C. EXPENSES
+    # Group by Category
+    period_exp['Amount'] = period_exp['Amount'].apply(clean_float)
+    expenses_by_cat = period_exp.groupby('Category')['Amount'].sum()
+    total_expenses = period_exp['Amount'].sum()
+    
+    net_profit = gross_profit - total_expenses
+
+    # --- PDF GENERATION ---
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Title
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "Notion to Sew", 0, 1, 'C')
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "Income Statement - Classified", 0, 1, 'C')
+    
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 10, f"Reporting Period: {s_date.strftime('%m/%d/%Y')} through {e_date.strftime('%m/%d/%Y')}", 0, 1, 'C')
+    pdf.line(10, 35, 200, 35)
+    pdf.ln(5)
+    
+    # HELPER: Row Function
+    def add_row(label, amount, bold=False, indent=0):
+        pdf.set_font("Arial", 'B' if bold else '', 10)
+        pdf.set_x(10 + indent)
+        pdf.cell(140, 7, label, 0, 0)
+        pdf.cell(40, 7, f"${amount:,.2f}", 0, 1, 'R')
+
+    # 1. REVENUE SECTION
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, "REVENUE", 0, 1)
+    add_row("Sales Revenue (excl. Tax)", net_sales, indent=5)
+    add_row("Total Revenue", net_sales, bold=True, indent=5)
+    pdf.ln(3)
+    
+    # 2. COGS SECTION
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, "COST OF GOODS SOLD", 0, 1)
+    add_row("Cost of Inventory Sold", cogs_total, indent=5)
+    add_row("Total Cost of Goods", cogs_total, bold=True, indent=5)
+    pdf.ln(2)
+    
+    # GROSS PROFIT
+    pdf.set_fill_color(240, 240, 240)
+    pdf.rect(10, pdf.get_y(), 190, 8, 'F')
+    add_row("GROSS PROFIT", gross_profit, bold=True)
+    pdf.ln(5)
+    
+    # 3. EXPENSES SECTION
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, "EXPENSES", 0, 1)
+    
+    if expenses_by_cat.empty:
+        add_row("(No expenses recorded)", 0.0, indent=5)
+    else:
+        for cat, amt in expenses_by_cat.items():
+            add_row(cat, amt, indent=5)
+            
+    pdf.ln(2)
+    add_row("Total Expenses", total_expenses, bold=True, indent=5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+    
+    # NET PROFIT
+    pdf.set_font("Arial", 'B', 12)
+    if net_profit >= 0:
+        pdf.set_text_color(0, 100, 0) # Green
+    else:
+        pdf.set_text_color(180, 0, 0) # Red
+        
+    pdf.cell(140, 10, "NET PROFIT / (LOSS):", 0, 0)
+    pdf.cell(40, 10, f"${net_profit:,.2f}", 0, 1, 'R')
+    
+    # Footer
+    pdf.set_y(-30)
+    pdf.set_text_color(150, 150, 150)
+    pdf.set_font("Arial", '', 8)
+    pdf.cell(0, 5, f"Run On: {datetime.now().strftime('%m/%d/%Y %H:%M')}", 0, 1, 'R')
+
+    return pdf.output(dest='S').encode('latin-1')
