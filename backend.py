@@ -52,22 +52,66 @@ def add_customer(name, email):
     ws.append_row([new_id, name, email, "", date_joined, "", "", 0.0])
     return force_refresh()
 
-def add_inventory_item(sku, name, price, stock, wholesale_price):
+# UPDATED: Added cost parameter
+def add_inventory_item(sku, name, price, stock, wholesale_price, cost):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Inventory")
-    ws.append_row([sku, name, price, stock, wholesale_price])
+    # Cost is added as the 6th column (Column F)
+    ws.append_row([sku, name, price, stock, wholesale_price, cost])
     return force_refresh()
 
-def update_inventory_batch(df_changes):
+# NEW: Specific function to Restock (Safer than full rewrite)
+def restock_item(sku, qty_to_add, new_cost=None):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Inventory")
-    headers = [df_changes.columns.tolist()]
-    values = df_changes.astype(str).values.tolist()
-    ws.clear()
-    ws.update(values=headers + values, range_name="A1")
+    
+    try:
+        cell = ws.find(str(sku))
+        # Update Stock (Column 4 / D)
+        current_stock = int(ws.cell(cell.row, 4).value or 0)
+        ws.update_cell(cell.row, 4, current_stock + qty_to_add)
+        
+        # Update Cost (Column 6 / F) if provided
+        if new_cost is not None:
+             # Check if col 6 exists, if not we might need to be careful, 
+             # but assuming schema is set:
+            ws.update_cell(cell.row, 6, new_cost)
+            
+        return force_refresh()
+    except Exception as e:
+        return False
+
+# CRITICAL FIX: Safer Batch Update
+def update_inventory_batch(df_changes):
+    if df_changes.empty:
+        return False # Safety guard: never wipe the sheet if DF is empty
+        
+    client = get_client()
+    sh = client.open("NotionToSew_DB")
+    ws = sh.worksheet("Inventory")
+    
+    # 1. Prepare data
+    headers = df_changes.columns.tolist()
+    data = df_changes.astype(str).values.tolist()
+    payload = [headers] + data
+    
+    # 2. Update the data range only (overwrite)
+    # This prevents the "window of death" where data is cleared but not yet written
+    ws.update(values=payload, range_name="A1")
+    
+    # 3. Optional: Clear only rows below the new dataset if the list got shorter
+    # (Prevents "ghost" rows if you deleted items)
+    current_row_count = len(ws.get_all_values())
+    new_row_count = len(payload)
+    if current_row_count > new_row_count:
+        # Clear rows from (new_last_row + 1) to (old_last_row)
+        ws.batch_clear([f"A{new_row_count + 1}:F{current_row_count}"])
+
     return force_refresh()
+
+# ... (Rest of commit_sale, mark_invoice_paid, etc. remains the same) ...
 
 def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status="Paid", credit_used=0.0):
     client = get_client()
