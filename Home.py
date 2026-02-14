@@ -58,10 +58,14 @@ if menu == "📊 Dashboard":
     
     if 'transactions' in st.session_state['data']:
         df = st.session_state['data']['transactions'].copy()
+        df_cust = st.session_state['data']['customers'].copy()
+        
+        # Date Filter
         df['DateObj'] = pd.to_datetime(df['Timestamp']).dt.date
         mask = (df['DateObj'] >= d_start) & (df['DateObj'] <= d_end)
-        df_filtered = df[mask]
+        df_filtered = df[mask].copy()
         
+        # Metrics
         df_filtered['TotalAmount'] = pd.to_numeric(df_filtered['TotalAmount'], errors='coerce').fillna(0)
         total_sales = df_filtered['TotalAmount'].sum()
         
@@ -74,7 +78,30 @@ if menu == "📊 Dashboard":
         c3.metric("Orders (Period)", len(df_filtered))
         
         st.subheader("Recent Activity")
-        st.dataframe(df_filtered.tail(10).sort_values(by="Timestamp", ascending=False), use_container_width=True)
+        
+        # PREPARE GRANDMA-FRIENDLY TABLE
+        # 1. Merge to get Customer Name
+        df_display = df_filtered.merge(df_cust[['CustomerID', 'Name']], on='CustomerID', how='left')
+        df_display['Name'] = df_display['Name'].fillna('Guest / Unknown')
+        
+        # 2. Select & Rename Columns
+        df_display = df_display[['Timestamp', 'Name', 'TotalAmount', 'Status', 'PaymentMethod']]
+        df_display.columns = ["Date & Time", "Customer", "Total", "Status", "Payment"]
+        
+        # 3. Sort Newest First
+        df_display = df_display.sort_values(by="Date & Time", ascending=False).head(20)
+        
+        # 4. Display with Formatting
+        st.dataframe(
+            df_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Total": st.column_config.NumberColumn(format="$%.2f"),
+                "Date & Time": st.column_config.DatetimeColumn(format="MMM DD, h:mm a"),
+                "Status": st.column_config.TextColumn(),
+            }
+        )
 
 # ==========================================
 # 2. INVENTORY
@@ -200,7 +227,6 @@ elif menu == "🛒 Checkout":
 
     # --- SUCCESS STATE ---
     if st.session_state.get('checkout_complete'):
-        st.balloons()
         st.success(f"✅ Order #{st.session_state['last_order']['id']} Recorded Successfully!")
         
         c1, c2, c3 = st.columns(3)
@@ -574,14 +600,15 @@ elif menu == "👥 Customers":
                                 st.warning("Deleted.")
                                 auto_refresh()
 
-                        # Previewer (Same Key Fix not needed for container, but good practice)
+                        # Previewer (Customer History)
                         if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
                             with st.container(border=True):
-                                if st.button("❌ Close", key=f"cls_{t_row['TransactionID']}_{i}"):
+                                # Close Button
+                                if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
                                     st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
                                     st.rerun()
                                     
-                                # PDF Generation (Standard Logic)
+                                # 1. Generate PDF Data
                                 t_id = str(t_row['TransactionID'])
                                 df_items['TransactionID'] = df_items['TransactionID'].astype(str)
                                 inv_items = df_items[df_items['TransactionID'] == t_id]
@@ -599,14 +626,21 @@ elif menu == "👥 Customers":
                                     addr = s_dict.get("Address", "Modesto, CA")
                                 else: addr = "Modesto, CA"
                                 
-                                pdf = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
-                                b64 = base64.b64encode(pdf).decode('utf-8')
-                                
-                                # 1. Generate PDF
                                 pdf_bytes = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
                                 
-                                # 2. Use the Viewer (No Base64 needed!)
-                                pdf_viewer(input=pdf_bytes, width=1000, height=800)
+                                # 2. Download/Print Button (Top of Viewer)
+                                st.download_button(
+                                    "🖨️ Download / Print Invoice", 
+                                    data=pdf_bytes,
+                                    file_name=f"Invoice_{t_id}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_{t_id}_{i}",
+                                    type="primary",
+                                    use_container_width=True
+                                )
+                                
+                                # 3. PDF Viewer (No Base64!)
+                                pdf_viewer(input=pdf_bytes, width=1000, height=1000)
 
 # ==========================================
 # 5. REPORTS
@@ -786,11 +820,14 @@ elif menu == "📝 Reports":
                     if c_p.button("💲", key=f"up_{row['TransactionID']}"):
                         db.mark_invoice_paid(row['TransactionID']); st.balloons(); auto_refresh()
 
+                # Previewer (Unpaid Report)
                 if st.session_state.get(f"view_inv_{row['TransactionID']}", False):
                     with st.container(border=True):
                         if st.button("❌ Close", key=f"uclose_{row['TransactionID']}"):
                             st.session_state[f"view_inv_{row['TransactionID']}"] = False
                             st.rerun()
+
+                        # 1. Generate PDF Data
                         t_id = str(row['TransactionID'])
                         df_items['TransactionID'] = df_items['TransactionID'].astype(str)
                         inv_items = df_items[df_items['TransactionID'] == t_id]
@@ -799,15 +836,30 @@ elif menu == "📝 Reports":
                             try: q = int(item['QtySold']); p = float(item['Price'])
                             except: q=1; p=0.0
                             cart_rebuild.append({"sku": str(item.get('SKU','')), "name": item['Name'], "qty": q, "price": p})
+                        
                         try: tax_val = float(row['TaxAmount'] if row['TaxAmount'] != '' else 0)
                         except: tax_val = 0.0
+                        
                         if 'settings' in st.session_state['data']:
                             s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
                             addr = s_dict.get("Address", "Modesto, CA")
                         else: addr = "Modesto, CA"
+                        
                         pdf_bytes = db.create_pdf(t_id, cust_name, addr, cart_rebuild, 0, tax_val, float(row['TotalAmount']), str(row.get('DueDate', '')))
-                        b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-                        st.markdown(f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
+                        
+                        # 2. Download Button
+                        st.download_button(
+                            "🖨️ Download Invoice", 
+                            data=pdf_bytes,
+                            file_name=f"Invoice_{t_id}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_unpaid_{t_id}",
+                            type="primary",
+                            use_container_width=True
+                        )
+
+                        # 3. PDF Viewer (No Base64!)
+                        pdf_viewer(input=pdf_bytes, width=700, height=800)
 
 # ==========================================
 # 6. SETTINGS
