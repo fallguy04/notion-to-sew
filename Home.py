@@ -81,42 +81,97 @@ if menu == "📊 Dashboard":
 elif menu == "📦 Inventory":
     st.title("Inventory Manager")
     
-    tab1, tab2, tab3 = st.tabs(["📝 Add New Item", "📋 Edit Database", "📥 Bulk Import"])
+    # Refresh data ensuring 'Cost' column exists in DataFrame
+    if 'Cost' not in st.session_state['data']['inventory'].columns:
+        st.session_state['data']['inventory']['Cost'] = 0.0
     
+    tab1, tab2, tab3 = st.tabs(["🔄 Add / Restock", "📋 Edit Database", "📥 Bulk Import"])
+    
+    # --- TAB 1: SMART ADD/RESTOCK ---
     with tab1:
-        st.subheader("Add Single Product")
-        with st.form("add_item_form"):
-            c1, c2 = st.columns(2)
-            new_sku = c1.text_input("SKU / Part Number")
-            new_name = c2.text_input("Product Name")
-            new_price = c1.number_input("Retail Price ($)", 0.0, 1000.0, 0.0)
-            new_whol = c2.number_input("Wholesale Price ($)", 0.0, 1000.0, 0.0)
-            new_stock = st.number_input("Opening Stock", 0, 10000, 0)
+        st.info("💡 Type a SKU below. If it exists, you can add stock. If it's new, you can create it.")
+        
+        # We use a distinct key for the lookup to avoid session state collisions
+        lookup_sku = st.text_input("Scan or Type SKU", key="inv_sku_lookup").strip()
+        
+        df_inv = st.session_state['data']['inventory']
+        
+        # Check if SKU exists
+        existing_item = df_inv[df_inv['SKU'].astype(str) == lookup_sku]
+        
+        if lookup_sku and not existing_item.empty:
+            # --- RESTOCK MODE ---
+            row = existing_item.iloc[0]
+            st.success(f"**Found:** {row['Name']}")
+            st.caption(f"Current Stock: {row['StockQty']} | Current Cost: ${row.get('Cost', 0):.2f}")
             
-            if st.form_submit_button("✅ Create Item", type="primary"):
-                if new_sku and new_name:
-                    db.add_inventory_item(new_sku, new_name, new_price, new_stock, new_whol)
-                    st.success("Added!")
+            with st.form("restock_form"):
+                c1, c2 = st.columns(2)
+                qty_add = c1.number_input("Quantity to ADD (+)", 1, 10000, 50)
+                new_cost_val = c2.number_input("Unit Cost ($)", 0.0, 1000.0, float(row.get('Cost', 0.0)))
+                
+                st.caption(f"New Total Stock will be: {row['StockQty'] + qty_add}")
+                
+                if st.form_submit_button("➕ Update Stock & Cost", type="primary"):
+                    db.restock_item(lookup_sku, qty_add, new_cost_val)
+                    st.success(f"Added {qty_add} to {row['Name']}!")
                     auto_refresh()
-                else: st.error("SKU/Name required.")
+                    
+        elif lookup_sku:
+            # --- CREATE NEW MODE ---
+            st.warning("New Item Detected")
+            with st.form("add_item_form"):
+                c1, c2 = st.columns(2)
+                # SKU is pre-filled from the lookup
+                st.text_input("SKU", value=lookup_sku, disabled=True)
+                new_name = st.text_input("Product Name")
+                
+                c3, c4 = st.columns(2)
+                new_price = c3.number_input("Retail Price ($)", 0.0, 1000.0, 0.0)
+                new_whol = c4.number_input("Wholesale Price ($)", 0.0, 1000.0, 0.0)
+                
+                c5, c6 = st.columns(2)
+                new_stock = c5.number_input("Opening Stock", 0, 10000, 0)
+                new_cost = c6.number_input("Unit Cost ($)", 0.0, 1000.0, 0.0)
+                
+                if st.form_submit_button("✅ Create Item", type="primary"):
+                    if new_name:
+                        db.add_inventory_item(lookup_sku, new_name, new_price, new_stock, new_whol, new_cost)
+                        st.success("Item Created!")
+                        auto_refresh()
+                    else: st.error("Name required.")
 
+    # --- TAB 2: EDIT DATABASE ---
     with tab2:
         df_inv = st.session_state['data']['inventory']
         search = st.text_input("🔍 Search Inventory", placeholder="Type to filter...")
+        
         if search:
             mask = df_inv.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)
             df_inv = df_inv[mask]
             
         with st.form("inv_editor"):
-            edited_df = st.data_editor(df_inv, use_container_width=True, num_rows="dynamic")
+            # Added Cost to column config for better formatting
+            edited_df = st.data_editor(
+                df_inv, 
+                use_container_width=True, 
+                num_rows="dynamic",
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="$%.2f"),
+                    "WholesalePrice": st.column_config.NumberColumn(format="$%.2f"),
+                    "Cost": st.column_config.NumberColumn(format="$%.2f"),
+                }
+            )
             if st.form_submit_button("💾 Save Changes"):
+                # Safety check inside backend is now active
                 db.update_inventory_batch(edited_df)
-                st.success("Updated!")
+                st.success("Database Updated Successfully!")
                 auto_refresh()
 
     with tab3:
         st.subheader("Bulk Import from CSV")
-        sample_data = pd.DataFrame([{"SKU": "TEST-01", "Name": "Example Item", "Price": 5.00, "WholesalePrice": 2.50, "StockQty": 100}])
+        # Added Cost to template
+        sample_data = pd.DataFrame([{"SKU": "TEST-01", "Name": "Example Item", "Price": 5.00, "WholesalePrice": 2.50, "StockQty": 100, "Cost": 1.25}])
         csv_template = sample_data.to_csv(index=False).encode('utf-8')
         st.download_button("⬇️ Download Template", data=csv_template, file_name="inventory_template.csv", mime="text/csv")
         
@@ -125,10 +180,16 @@ elif menu == "📦 Inventory":
             if st.button("🚀 Upload to Database"):
                 import_df = pd.read_csv(uploaded_file)
                 current_df = st.session_state['data']['inventory']
+                
+                # Check for Cost column in upload, fill 0 if missing
+                if 'Cost' not in import_df.columns:
+                    import_df['Cost'] = 0.0
+                    
                 final_df = pd.concat([current_df, import_df], ignore_index=True)
                 db.update_inventory_batch(final_df)
                 st.success("Import Complete!")
                 auto_refresh()
+
 
 # ==========================================
 # 3. CHECKOUT
