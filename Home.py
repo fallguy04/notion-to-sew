@@ -351,8 +351,8 @@ elif menu == "🛒 Checkout":
                             st.session_state['view_last_invoice'] = False
                             st.rerun()
                                 
-                                # STORE STATE INSTEAD OF DOWNLOADING IMMEDIATELY
-                                st.session_state['last_order'] = {
+                            # STORE STATE INSTEAD OF DOWNLOADING IMMEDIATELY
+                            st.session_state['last_order'] = {
                                     'id': new_id,
                                     'pdf': pdf_bytes
                                 }
