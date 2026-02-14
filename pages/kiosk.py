@@ -258,6 +258,7 @@ elif st.session_state['page'] == 'checkout':
 
             try:
                 clean_rate = float(str(raw_rate).replace("%", "").strip())
+                # If rate is > 1 (e.g. 8.0), divide by 100. If < 1 (e.g. 0.08), keep it.
                 if clean_rate > 1: clean_rate = clean_rate / 100
             except: clean_rate = 0.0
 
@@ -266,25 +267,43 @@ elif st.session_state['page'] == 'checkout':
             
             st.write(f"Subtotal: ${subtotal:.2f}")
             st.write(f"Tax: ${tax_amt:.2f}")
-            st.markdown(f"# ${total:.2f}")
             
-            st.divider()
-            
-            # Customer
+            # Customer & Credit Logic (NEW for Kiosk)
             cust_tab1, cust_tab2 = st.tabs(["Search Name", "New Customer"])
             selected_cust = None
+            cust_credit = 0.0
+            
             with cust_tab1:
-                cust_list = st.session_state['data']['customers']['Name']
+                cust_df = st.session_state['data']['customers']
+                cust_list = cust_df['Name']
                 selected_cust = st.selectbox("Name", cust_list, index=None, placeholder="Select...", label_visibility="collapsed")
+                
+                if selected_cust:
+                    cust_row = cust_df[cust_df['Name'] == selected_cust].iloc[0]
+                    try: cust_credit = float(cust_row.get('Credit', 0) if cust_row.get('Credit') != "" else 0)
+                    except: cust_credit = 0.0
+                    
             with cust_tab2:
                 with st.form("new_kiosk_cust"):
                     n_name = st.text_input("Name")
                     n_email = st.text_input("Email")
                     if st.form_submit_button("Join"):
                         db.add_customer(n_name, n_email)
-                        db.get_data.clear()
+                        # Clear cache and reload
+                        del st.session_state['data']
                         st.rerun()
 
+            credit_applied = 0.0
+            if selected_cust and cust_credit > 0:
+                st.info(f"💎 You have **${cust_credit:.2f}** in store credit!")
+                if st.checkbox("Apply Credit?"):
+                    max_apply = min(cust_credit, total)
+                    credit_applied = max_apply # Kiosk usually auto-applies max for simplicity, or we can add input
+                    st.write(f"Credit Applied: -${credit_applied:.2f}")
+
+            final_total = max(0.0, total - credit_applied)
+            st.markdown(f"# ${final_total:.2f}")
+            
             st.divider()
             
             # Payment
@@ -294,35 +313,78 @@ elif st.session_state['page'] == 'checkout':
                 if venmo_user:
                     st.success(f"Scanning for @{venmo_user}")
                     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://venmo.com/u/{venmo_user}"
-                    st.image(qr_url, caption=f"Scan to pay ${total:.2f}", width=200)
+                    st.image(qr_url, caption=f"Scan to pay ${final_total:.2f}", width=200)
                 else:
                     st.warning("No Venmo account set in Admin Settings!")
 
             if st.button("✅ Finish Sale", type="primary", use_container_width=True):
                 if selected_cust:
                     try:
-                        cust_row = st.session_state['data']['customers'][st.session_state['data']['customers']['Name'] == selected_cust].iloc[0]
                         cust_id = cust_row['CustomerID']
                         status = "Pending" if pay_method == "Pay Later (Invoice)" else "Paid"
                         
-                        with st.spinner("Printing..."):
-                            new_id = db.commit_sale(st.session_state['kiosk_cart'], total, tax_amt, cust_id, pay_method, False, status)
+                        with st.spinner("Processing..."):
+                            new_id = db.commit_sale(
+                                st.session_state['kiosk_cart'], final_total, tax_amt, cust_id, 
+                                pay_method, False, status, credit_used=credit_applied
+                            )
                             
+                            # PDF Generation
                             if 'settings' in st.session_state['data']:
                                 s_df = st.session_state['data']['settings']
                                 s_dict = dict(zip(s_df['Key'], s_df['Value']))
                                 address = s_dict.get("Address", "Modesto, CA")
                             else: address = "Modesto, CA"
                             
-                            pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['kiosk_cart'], subtotal, tax_amt, total, "Upon Receipt")
-                            st.download_button("📄 Download Invoice", pdf_bytes, file_name=f"Invoice_{new_id}.pdf", use_container_width=True)
+                            pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['kiosk_cart'], subtotal, tax_amt, final_total, "Upon Receipt", credit_applied=credit_applied)
                             
+                            # Store Success Data
+                            st.session_state['last_kiosk_order'] = {
+                                'id': new_id,
+                                'pdf': pdf_bytes,
+                                'customer': selected_cust
+                            }
                             st.session_state['kiosk_cart'] = []
-                            st.success("Sale Complete!")
-                            time.sleep(3)
-                            go_home()
+                            st.session_state['page'] = 'success' # GO TO SUCCESS PAGE
                             st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
                 else:
                     st.error("Who is this for? (Select Name)")
+
+# ==========================================
+# PAGE 3: SUCCESS (New!)
+# ==========================================
+elif st.session_state['page'] == 'success':
+    # Simple, clear success screen
+    st.balloons()
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        with st.container(border=True):
+            st.markdown("<h1 style='text-align: center; color: green;'>Thank You!</h1>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center;'>Order #{st.session_state['last_kiosk_order']['id']} Confirmed</h3>", unsafe_allow_html=True)
+            st.write("")
+            
+            import base64
+            
+            # View Invoice Button
+            if st.button("👁️ View Receipt", use_container_width=True):
+                st.session_state['view_kiosk_receipt'] = True
+            
+            if st.session_state.get('view_kiosk_receipt'):
+                pdf_data = st.session_state['last_kiosk_order']['pdf']
+                b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
+                st.markdown(f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="500"></iframe>', unsafe_allow_html=True)
+                if st.button("Close Receipt"):
+                    st.session_state['view_kiosk_receipt'] = False
+                    st.rerun()
+            
+            st.divider()
+            
+            # Return Home
+            if st.button("🏠 Start New Order", type="primary", use_container_width=True):
+                # Clean up
+                st.session_state['view_kiosk_receipt'] = False
+                st.session_state['last_kiosk_order'] = None
+                go_home()
+                st.rerun()
