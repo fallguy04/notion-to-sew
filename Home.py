@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import backend as db
 from datetime import datetime, date
+from streamlit_pdf_viewer import pdf_viewer
 import base64
 
 # --- CONFIG ---
@@ -602,13 +603,11 @@ elif menu == "👥 Customers":
                                 pdf = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
                                 b64 = base64.b64encode(pdf).decode('utf-8')
                                 
-                                # 3. Object Tag (Robust Method)
-                                pdf_display = f'''
-                                    <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="600px">
-                                        <p>Your browser can't display this PDF directly. <a href="data:application/pdf;base64,{b64}" download="Invoice.pdf">Click here to download it.</a></p>
-                                    </object>
-                                '''
-                                st.markdown(pdf_display, unsafe_allow_html=True)
+                                # 1. Generate PDF
+                                pdf_bytes = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
+                                
+                                # 2. Use the Viewer (No Base64 needed!)
+                                pdf_viewer(input=pdf_bytes, width=700, height=600)
 
 # ==========================================
 # 5. REPORTS
@@ -702,14 +701,12 @@ elif menu == "📝 Reports":
             c_b.metric("COGS", f"${total_cogs:,.2f}")
             c_c.metric("Net Profit", f"${net_profit:,.2f}", delta_color="normal")
             
-            # Viewer (Fixed for Chrome)
-            b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-            pdf_display = f'''
-                <object data="data:application/pdf;base64,{b64_pdf}" type="application/pdf" width="100%" height="600px">
-                    <p>Your browser can't display this PDF directly. <a href="data:application/pdf;base64,{b64_pdf}" download="Report.pdf">Click here to download it.</a></p>
-                </object>
-            '''
-            st.markdown(pdf_display, unsafe_allow_html=True)
+            # ... pdf_data = db.generate_income_statement_pdf(...)
+            
+            # Preview
+            st.divider()
+            # No base64 encoding needed
+            pdf_viewer(input=pdf_data, width=700, height=800)
             
             st.download_button(
                 "⬇️ Download PDF", data=pdf_data,
