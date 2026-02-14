@@ -776,24 +776,102 @@ elif menu == "📝 Reports":
         m1, m2 = st.columns(2)
         m1.metric("Tax Collected", f"${total_tax:,.2f}"); m2.metric("Taxable Sales", f"${taxable_sales:,.2f}")
 
+    # --- TAB 3: TOP SELLERS (UPGRADED) ---
     with tab3:
-        st.header("Best Selling Products")
-        c1, c2 = st.columns(2)
+        st.header("🏆 Product Performance")
+        
+        # 1. Controls
+        c1, c2, c3 = st.columns([1, 1, 2])
         ts_start = c1.date_input("Start Date", value=date(date.today().year, 1, 1), key="ts_start")
-        ts_end = c2.date_input("End Date", value=date.today(), key="ts_end")
+        ts_end = c2.date_input("End Date", value=today, key="ts_end")
+        rank_by = c3.radio("Rank Products By:", ["Quantity Sold", "Total Revenue ($)", "Net Profit ($)"], horizontal=True)
+        
+        # 2. Data Preparation
         df_items = st.session_state['data']['items'].copy()
         df_trans = st.session_state['data']['transactions'][['TransactionID', 'Timestamp']].copy()
+        
+        # Merge Transactions to get Date
         df_items['TransactionID'] = df_items['TransactionID'].astype(str)
         df_trans['TransactionID'] = df_trans['TransactionID'].astype(str)
         merged = df_items.merge(df_trans, on='TransactionID', how='left')
+        
+        # Filter by Date
         merged['DateObj'] = pd.to_datetime(merged['Timestamp']).dt.date
         mask = (merged['DateObj'] >= ts_start) & (merged['DateObj'] <= ts_end)
-        filtered_items = merged[mask]
+        filtered_items = merged[mask].copy()
+        
         if not filtered_items.empty:
-            filtered_items['QtySold'] = pd.to_numeric(filtered_items['QtySold'], errors='coerce')
-            top_sellers = filtered_items.groupby('Name')['QtySold'].sum().sort_values(ascending=False).head(10)
-            st.bar_chart(top_sellers)
-        else: st.info("No sales in this period.")
+            # Clean Numbers
+            filtered_items['QtySold'] = pd.to_numeric(filtered_items['QtySold'], errors='coerce').fillna(0)
+            filtered_items['Price'] = pd.to_numeric(filtered_items['Price'], errors='coerce').fillna(0)
+            
+            # Merge with Inventory to get COST (for Profit calc)
+            if 'inventory' in st.session_state['data']:
+                inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost', 'Category']].copy()
+                inv_ref['SKU'] = inv_ref['SKU'].astype(str)
+                filtered_items['SKU'] = filtered_items['SKU'].astype(str)
+                
+                # Merge
+                full_data = filtered_items.merge(inv_ref, on='SKU', how='left')
+                full_data['Cost'] = pd.to_numeric(full_data['Cost'], errors='coerce').fillna(0)
+                full_data['Category'] = full_data['Category'].fillna("Uncategorized")
+            else:
+                full_data = filtered_items
+                full_data['Cost'] = 0.0
+                full_data['Category'] = "Uncategorized"
+
+            # Calculate Metrics per Row
+            full_data['Revenue'] = full_data['QtySold'] * full_data['Price']
+            full_data['TotalCost'] = full_data['QtySold'] * full_data['Cost']
+            full_data['Profit'] = full_data['Revenue'] - full_data['TotalCost']
+            
+            # --- VISUALIZATION 1: BY CATEGORY ---
+            st.subheader("📦 Sales by Category")
+            cat_group = full_data.groupby('Category')[['QtySold', 'Revenue', 'Profit']].sum().reset_index()
+            
+            # Show simple bar chart based on selection
+            if "Revenue" in rank_by:
+                st.bar_chart(cat_group.set_index('Category')['Revenue'], color="#2ecc71") # Green
+            elif "Profit" in rank_by:
+                st.bar_chart(cat_group.set_index('Category')['Profit'], color="#f1c40f") # Gold
+            else:
+                st.bar_chart(cat_group.set_index('Category')['QtySold'], color="#3498db") # Blue
+
+            st.divider()
+
+            # --- VISUALIZATION 2: LEADERBOARD ---
+            st.subheader("⭐ Top 20 Products")
+            
+            # Group by Product
+            product_group = full_data.groupby(['Name', 'SKU'])[['QtySold', 'Revenue', 'Profit']].sum().reset_index()
+            
+            # Sort
+            if "Revenue" in rank_by:
+                sorted_df = product_group.sort_values(by='Revenue', ascending=False)
+                sort_col = "Revenue"
+            elif "Profit" in rank_by:
+                sorted_df = product_group.sort_values(by='Profit', ascending=False)
+                sort_col = "Profit"
+            else:
+                sorted_df = product_group.sort_values(by='QtySold', ascending=False)
+                sort_col = "QtySold"
+            
+            # Display Table
+            st.dataframe(
+                sorted_df.head(20),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Name": st.column_config.TextColumn("Product Name", width="medium"),
+                    "SKU": st.column_config.TextColumn("SKU", width="small"),
+                    "QtySold": st.column_config.NumberColumn("Sold", format="%d"),
+                    "Revenue": st.column_config.NumberColumn("Revenue", format="$%.2f"),
+                    "Profit": st.column_config.NumberColumn("Profit", format="$%.2f"),
+                }
+            )
+            
+        else:
+            st.info("No sales found in this period.")
 
     with tab4:
         st.header("Accounts Receivable")
