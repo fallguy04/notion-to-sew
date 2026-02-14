@@ -602,44 +602,129 @@ elif menu == "👥 Customers":
 # ==========================================
 elif menu == "📝 Reports":
     st.title("Financial Reports")
-    tab1, tab2, tab3, tab4 = st.tabs(["💰 Profit & Loss", "🏛️ Sales Tax", "📈 Top Sellers", "⏳ Unpaid"])
+    tab1, tab2, tab3, tab4 = st.tabs(["💰 Income Statement", "🏛️ Sales Tax", "📈 Top Sellers", "⏳ Unpaid"])
     
+    # --- TAB 1: INCOME STATEMENT (Updated) ---
     with tab1:
-        st.header("Net Profit Calculator")
+        st.header("Income Statement")
+        
+        # 1. Date Selection
         c1, c2 = st.columns(2)
-        pl_start = c1.date_input("Start Date", value=date(date.today().year, 1, 1), key="pl_start")
-        pl_end = c2.date_input("End Date", value=date.today(), key="pl_end")
+        r_start = c1.date_input("Start Date", value=date(date.today().year, 1, 1), key="r_start")
+        r_end = c2.date_input("End Date", value=date.today(), key="r_end")
         
-        df_trans = st.session_state['data']['transactions'].copy()
-        df_trans['DateObj'] = pd.to_datetime(df_trans['Timestamp']).dt.date
-        mask_t = (df_trans['DateObj'] >= pl_start) & (df_trans['DateObj'] <= pl_end)
-        filtered_trans = df_trans[mask_t]
-        revenue = pd.to_numeric(filtered_trans['TotalAmount'], errors='coerce').sum()
-        
-        df_exp = st.session_state.get('data', {}).get('expenses', pd.DataFrame())
-        expenses = 0.0
-        if not df_exp.empty:
-            df_exp['DateObj'] = pd.to_datetime(df_exp['Date']).dt.date
-            mask_e = (df_exp['DateObj'] >= pl_start) & (df_exp['DateObj'] <= pl_end)
-            filtered_exp = df_exp[mask_e]
-            expenses = pd.to_numeric(filtered_exp['Amount'], errors='coerce').sum()
+        if st.button("📊 Generate Report"):
+            # A. Prepare Data
+            df_trans = st.session_state['data']['transactions'].copy()
+            df_items = st.session_state['data']['items'].copy()
+            df_exp = st.session_state.get('data', {}).get('expenses', pd.DataFrame())
             
-        net_profit = revenue - expenses
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Revenue", f"${revenue:,.2f}")
-        m2.metric("Expenses", f"${expenses:,.2f}")
-        m3.metric("Net Profit", f"${net_profit:,.2f}")
-        st.divider()
-        with st.expander("Log New Expense"):
-            with st.form("expense_form"):
-                c1, c2 = st.columns(2)
-                ex_date = c1.date_input("Date")
-                ex_cat = c2.selectbox("Category", ["Fabric", "Notions", "Rent", "Marketing", "Other"])
-                ex_amt = c1.number_input("Amount ($)", 0.0, 10000.0, 0.0, step=0.001, format="%.3f")
-                ex_desc = c2.text_input("Description")
-                if st.form_submit_button("➖ Log Expense"):
-                    db.add_expense(ex_date, ex_cat, ex_amt, ex_desc)
-                    auto_refresh()
+            # Filter by Date
+            df_trans['DateObj'] = pd.to_datetime(df_trans['Timestamp']).dt.date
+            mask_t = (df_trans['DateObj'] >= r_start) & (df_trans['DateObj'] <= r_end)
+            f_trans = df_trans[mask_t]
+            
+            # B. Calculate Revenue (Split Retail vs Wholesale)
+            # Ensure numeric
+            f_trans['TotalAmount'] = pd.to_numeric(f_trans['TotalAmount'], errors='coerce').fillna(0)
+            f_trans['TaxAmount'] = pd.to_numeric(f_trans['TaxAmount'], errors='coerce').fillna(0)
+            
+            # Wholesale Logic: Look for 'IsWholesale' flag OR 'Wholesale' column
+            if 'IsWholesale' in f_trans.columns:
+                ws_mask = f_trans['IsWholesale'].astype(str).str.lower() == 'true'
+            elif 'Wholesale' in f_trans.columns:
+                ws_mask = f_trans['Wholesale'].astype(str).str.lower() == 'true'
+            else:
+                ws_mask = pd.Series([False] * len(f_trans))
+            
+            # Revenue Calculation
+            # Net Sales = Total - Tax
+            f_trans['NetSale'] = f_trans['TotalAmount'] - f_trans['TaxAmount']
+            
+            wholesale_sales = f_trans[ws_mask]['NetSale'].sum()
+            retail_sales = f_trans[~ws_mask]['NetSale'].sum()
+            total_income = wholesale_sales + retail_sales
+            
+            # C. Calculate COGS
+            # We need to link Transactions -> Items -> Cost
+            # Filter Items by the valid Transaction IDs
+            valid_ids = f_trans['TransactionID'].astype(str).tolist()
+            df_items['TransactionID'] = df_items['TransactionID'].astype(str)
+            f_items = df_items[df_items['TransactionID'].isin(valid_ids)].copy()
+            
+            # Merge with Inventory to get 'Cost' if not present in transaction items
+            # (Note: Best practice is to store Cost at time of sale, but looking up current cost is the fallback)
+            inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost']].copy()
+            inv_ref['SKU'] = inv_ref['SKU'].astype(str)
+            f_items['SKU'] = f_items['SKU'].astype(str)
+            
+            # Clean Qty
+            f_items['QtySold'] = pd.to_numeric(f_items['QtySold'], errors='coerce').fillna(0)
+            
+            merged_items = f_items.merge(inv_ref, on='SKU', how='left')
+            # Calculate Line Cost
+            merged_items['LineCost'] = merged_items['QtySold'] * pd.to_numeric(merged_items['Cost'], errors='coerce').fillna(0)
+            
+            total_cogs = merged_items['LineCost'].sum()
+            gross_profit = total_income - total_cogs
+            
+            # D. Expenses
+            expenses_breakdown = {}
+            total_expenses = 0.0
+            
+            if not df_exp.empty:
+                df_exp['DateObj'] = pd.to_datetime(df_exp['Date']).dt.date
+                mask_e = (df_exp['DateObj'] >= r_start) & (df_exp['DateObj'] <= r_end)
+                f_exp = df_exp[mask_e].copy()
+                f_exp['Amount'] = pd.to_numeric(f_exp['Amount'], errors='coerce').fillna(0)
+                
+                # Group by Category
+                expenses_breakdown = f_exp.groupby('Category')['Amount'].sum().to_dict()
+                total_expenses = sum(expenses_breakdown.values())
+            
+            net_profit = gross_profit - total_expenses
+            
+            # E. Display Preview
+            st.divider()
+            c_a, c_b, c_c = st.columns(3)
+            c_a.metric("Total Revenue", f"${total_income:,.2f}")
+            c_b.metric("COGS", f"${total_cogs:,.2f}")
+            c_c.metric("Net Profit", f"${net_profit:,.2f}", delta_color="normal")
+            
+            # F. Generate PDF
+            financials = {
+                'retail_sales': retail_sales,
+                'wholesale_sales': wholesale_sales,
+                'total_income': total_income,
+                'cogs': total_cogs,
+                'gross_profit': gross_profit,
+                'expenses_breakdown': expenses_breakdown,
+                'total_expenses': total_expenses,
+                'net_profit': net_profit
+            }
+            
+            pdf_data = db.generate_income_statement_pdf(r_start, r_end, financials)
+            
+            st.download_button(
+                "📄 Download Official PDF Report",
+                data=pdf_data,
+                file_name=f"IncomeStatement_{r_start}_{r_end}.pdf",
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True
+            )
+            
+            # G. Expense Logger (Moved to bottom of report)
+            with st.expander("➕ Log New Expense"):
+                with st.form("expense_form_rep"):
+                    c1, c2 = st.columns(2)
+                    ex_date = c1.date_input("Date")
+                    ex_cat = c2.selectbox("Category", ["Fabric", "Notions", "Rent", "Marketing", "Shipping", "Wages", "Other"])
+                    ex_amt = c1.number_input("Amount ($)", 0.0, 10000.0, 0.0, step=0.01)
+                    ex_desc = c2.text_input("Description")
+                    if st.form_submit_button("Save Expense"):
+                        db.add_expense(ex_date, ex_cat, ex_amt, ex_desc)
+                        auto_refresh()
 
     with tab2:
         st.header("Sales Tax Liability")
