@@ -1,6 +1,7 @@
 import streamlit as st
 import backend as db
 import pandas as pd
+from streamlit_pdf_viewer import pdf_viewer
 import time
 
 # --- CONFIG (iPad Optimized - Refined) ---
@@ -372,15 +373,10 @@ elif st.session_state['page'] == 'success':
                 st.session_state['view_kiosk_receipt'] = True
             
             if st.session_state.get('view_kiosk_receipt'):
+                # Use raw bytes
                 pdf_data = st.session_state['last_kiosk_order']['pdf']
-                b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
                 
-                pdf_display = f'''
-                    <object data="data:application/pdf;base64,{b64_pdf}" type="application/pdf" width="100%" height="500px">
-                        <p>Your browser can't display this PDF directly. <a href="data:application/pdf;base64,{b64_pdf}" download="Receipt.pdf">Click here to download it.</a></p>
-                    </object>
-                '''
-                st.markdown(pdf_display, unsafe_allow_html=True)
+                pdf_viewer(input=pdf_data, width=700, height=600)
                 
                 if st.button("Close Receipt"):
                     st.session_state['view_kiosk_receipt'] = False
