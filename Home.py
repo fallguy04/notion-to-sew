@@ -196,106 +196,166 @@ elif menu == "📦 Inventory":
 # ==========================================
 elif menu == "🛒 Checkout":
     st.title("Point of Sale")
-    c1, c2 = st.columns([1.5, 1])
-    
-    with c1:
-        st.subheader("Add Item")
-        is_wholesale = st.checkbox("Apply Wholesale Pricing?", value=False)
-        inv = st.session_state['data']['inventory']
-        cust = st.session_state['data']['customers']
-        inv['lookup'] = inv['SKU'].astype(str) + " | " + inv['Name']
-        selected_item_str = st.selectbox("Search Item", inv['lookup'], index=None)
+
+    # --- SUCCESS STATE (New!) ---
+    if st.session_state.get('checkout_complete'):
+        st.balloons()
+        st.success(f"✅ Order #{st.session_state['last_order']['id']} Recorded Successfully!")
         
-        if selected_item_str:
-            sku_str = selected_item_str.split(" | ")[0].strip()
-            mask = inv['SKU'].astype(str).str.strip() == sku_str
-            item_row = inv[mask].iloc[0]
+        c1, c2, c3 = st.columns(3)
+        
+        # 1. View Invoice (Modal)
+        if c1.button("👁️ View Invoice", use_container_width=True):
+            st.session_state['view_last_invoice'] = True
+        
+        # 2. Download Invoice
+        pdf_data = st.session_state['last_order']['pdf']
+        c2.download_button(
+            "📄 Download PDF", 
+            data=pdf_data, 
+            file_name=f"Invoice_{st.session_state['last_order']['id']}.pdf", 
+            mime="application/pdf",
+            use_container_width=True
+        )
+        
+        # 3. New Sale
+        if c3.button("✨ New Sale", type="primary", use_container_width=True):
+            st.session_state['checkout_complete'] = False
+            st.session_state['view_last_invoice'] = False
+            st.session_state['last_order'] = None
+            st.rerun()
+
+        # Preview Modal
+        if st.session_state.get('view_last_invoice'):
+            st.divider()
+            b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
+            st.markdown(f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600"></iframe>', unsafe_allow_html=True)
+            if st.button("❌ Close Preview"):
+                st.session_state['view_last_invoice'] = False
+                st.rerun()
+
+    # --- NORMAL CHECKOUT ---
+    else:
+        c1, c2 = st.columns([1.5, 1])
+        
+        with c1:
+            st.subheader("Add Item")
+            is_wholesale = st.checkbox("Apply Wholesale Pricing?", value=False)
+            inv = st.session_state['data']['inventory']
+            cust = st.session_state['data']['customers']
+            inv['lookup'] = inv['SKU'].astype(str) + " | " + inv['Name']
+            selected_item_str = st.selectbox("Search Item", inv['lookup'], index=None)
+            
+            if selected_item_str:
+                sku_str = selected_item_str.split(" | ")[0].strip()
+                mask = inv['SKU'].astype(str).str.strip() == sku_str
+                item_row = inv[mask].iloc[0]
+                with st.container(border=True):
+                    # Price Selection Logic
+                    base_price = item_row['WholesalePrice'] if is_wholesale and float(item_row.get('WholesalePrice', 0) or 0) > 0 else item_row['Price']
+                    
+                    c_qty, c_price = st.columns(2)
+                    qty = c_qty.number_input("Quantity", 1, 1000, 1)
+                    final_price = c_price.number_input("Unit Price ($)", 0.0, 10000.0, float(base_price))
+                    
+                    if st.button("Add to Cart", type="primary", use_container_width=True):
+                        st.session_state['cart'].append({
+                            "sku": sku_str, "name": item_row['Name'], "qty": qty, "price": final_price, "total": qty * final_price
+                        })
+                        st.rerun()
+
+        with c2:
             with st.container(border=True):
-                base_price = item_row['WholesalePrice'] if is_wholesale and item_row['WholesalePrice'] else item_row['Price']
-                c_qty, c_price = st.columns(2)
-                qty = c_qty.number_input("Quantity", 1, 1000, 1)
-                final_price = c_price.number_input("Unit Price ($)", 0.0, 10000.0, float(base_price))
-                if st.button("Add to Cart", type="primary", use_container_width=True):
-                    st.session_state['cart'].append({
-                        "sku": sku_str, "name": item_row['Name'], "qty": qty, "price": final_price, "total": qty * final_price
-                    })
-                    st.rerun()
+                st.subheader("Current Order")
+                if not st.session_state['cart']: st.info("Cart is empty.")
+                else:
+                    subtotal = sum(item['total'] for item in st.session_state['cart'])
+                    # List Items
+                    for i, item in enumerate(st.session_state['cart']):
+                        c_a, c_b, c_c = st.columns([3, 1, 0.5])
+                        c_a.write(f"**{item['name']}**\n{item['qty']} @ ${item['price']:.2f}")
+                        c_b.write(f"${item['total']:.2f}")
+                        if c_c.button("x", key=f"del_{i}"):
+                            st.session_state['cart'].pop(i)
+                            st.rerun()
+                    st.divider()
+                    
+                    # Tax Logic
+                    if 'settings' in st.session_state['data']:
+                        s_df = st.session_state['data']['settings']
+                        settings_cache = dict(zip(s_df['Key'], s_df['Value']))
+                        raw_rate = settings_cache.get("TaxRate", "0.08")
+                        venmo_user = settings_cache.get("VenmoUser", "")
+                    else: raw_rate = "0.08"; venmo_user = ""
+                    
+                    try: tax_rate = float(str(raw_rate).replace("%", "").strip())
+                    except: tax_rate = 0.0
+                    
+                    apply_tax = st.checkbox(f"Apply Tax ({(tax_rate*100):.3f}%)", value=not is_wholesale)
+                    tax_amt = subtotal * tax_rate if apply_tax else 0.0
+                    cart_total = subtotal + tax_amt
+                    
+                    # CUSTOMER & CREDIT LOGIC
+                    cust_tab1, cust_tab2 = st.tabs(["Existing", "New"])
+                    selected_cust = None; cust_credit = 0.0
+                    with cust_tab1:
+                        selected_cust_name = st.selectbox("Customer", cust['Name'], index=None)
+                        if selected_cust_name:
+                            selected_cust = selected_cust_name
+                            cust_row = cust[cust['Name'] == selected_cust].iloc[0]
+                            cust_id = cust_row['CustomerID']
+                            try: cust_credit = float(cust_row.get('Credit', 0) if cust_row.get('Credit') != "" else 0)
+                            except: cust_credit = 0.0
+                    with cust_tab2:
+                        with st.form("q_add"):
+                            nn = st.text_input("Name"); ne = st.text_input("Email")
+                            if st.form_submit_button("Save"): db.add_customer(nn, ne); auto_refresh()
 
-    with c2:
-        with st.container(border=True):
-            st.subheader("Current Order")
-            if not st.session_state['cart']: st.info("Cart is empty.")
-            else:
-                subtotal = sum(item['total'] for item in st.session_state['cart'])
-                for i, item in enumerate(st.session_state['cart']):
-                    c_a, c_b = st.columns([3, 1])
-                    c_a.write(f"**{item['name']}** ({item['qty']} x ${item['price']:.2f})")
-                    c_b.write(f"${item['total']:.2f}")
-                st.divider()
-                
-                if 'settings' in st.session_state['data']:
-                    s_df = st.session_state['data']['settings']
-                    settings_cache = dict(zip(s_df['Key'], s_df['Value']))
-                    raw_rate = settings_cache.get("TaxRate", "0.08")
-                    venmo_user = settings_cache.get("VenmoUser", "")
-                else: raw_rate = "0.08"; venmo_user = ""
-                
-                try: tax_rate = float(str(raw_rate).replace("%", "").strip()) / 100 if float(str(raw_rate).replace("%", "").strip()) > 1 else float(str(raw_rate).replace("%", "").strip())
-                except: tax_rate = 0.0
-                
-                apply_tax = st.checkbox(f"Apply Tax ({tax_rate*100:.3f}%)", value=not is_wholesale)
-                tax_amt = subtotal * tax_rate if apply_tax else 0.0
-                cart_total = subtotal + tax_amt
-                
-                # CREDIT LOGIC
-                cust_tab1, cust_tab2 = st.tabs(["Existing", "New"])
-                selected_cust = None; cust_credit = 0.0
-                with cust_tab1:
-                    selected_cust_name = st.selectbox("Customer", cust['Name'], index=None)
-                    if selected_cust_name:
-                        selected_cust = selected_cust_name
-                        cust_row = cust[cust['Name'] == selected_cust].iloc[0]
-                        cust_id = cust_row['CustomerID']
-                        cust_credit = float(cust_row.get('Credit', 0) if cust_row.get('Credit') != "" else 0)
-                with cust_tab2:
-                    with st.form("q_add"):
-                        nn = st.text_input("Name"); ne = st.text_input("Email")
-                        if st.form_submit_button("Save"): db.add_customer(nn, ne); auto_refresh()
+                    credit_applied = 0.0
+                    if selected_cust and cust_credit > 0:
+                        st.info(f"💎 **Credit Available: ${cust_credit:.2f}**")
+                        if st.checkbox("Apply Store Credit?"):
+                            max_apply = min(cust_credit, cart_total)
+                            credit_applied = st.number_input("Amount to apply", 0.0, max_apply, max_apply)
+                    
+                    final_due = max(0.0, cart_total - credit_applied)
+                    st.write(f"Subtotal: ${subtotal:.2f}"); st.write(f"Tax: ${tax_amt:.2f}")
+                    if credit_applied > 0: st.write(f"Store Credit: -${credit_applied:.2f}")
+                    st.markdown(f"### Total: ${final_due:.2f}")
+                    st.divider()
+                    
+                    pay_method = st.selectbox("Payment", ["Cash", "Card", "Venmo", "Invoice (Pay Later)"])
+                    if pay_method == "Venmo" and venmo_user:
+                        st.image(f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://venmo.com/u/{venmo_user}", width=150, caption=f"@{venmo_user}")
 
-                credit_applied = 0.0
-                if selected_cust and cust_credit > 0:
-                    st.success(f"✨ Available Credit: ${cust_credit:.2f}")
-                    if st.checkbox("Apply Store Credit?"):
-                        max_apply = min(cust_credit, cart_total)
-                        credit_applied = st.number_input("Amount to apply", 0.0, max_apply, max_apply)
-                
-                final_due = max(0.0, cart_total - credit_applied)
-                st.write(f"Subtotal: ${subtotal:.2f}"); st.write(f"Tax: ${tax_amt:.2f}")
-                if credit_applied > 0: st.write(f"Store Credit: -${credit_applied:.2f}")
-                st.metric("Total Due", f"${final_due:.2f}")
-                st.divider()
-                
-                pay_method = st.selectbox("Payment", ["Cash", "Card", "Venmo", "Invoice (Pay Later)"])
-                if pay_method == "Venmo" and venmo_user:
-                    st.image(f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://venmo.com/u/{venmo_user}", width=150, caption=f"@{venmo_user}")
-
-                if st.button("✅ Complete Order", type="primary", use_container_width=True):
-                    if selected_cust:
-                        status = "Pending" if pay_method == "Invoice (Pay Later)" else "Paid"
-                        with st.spinner("Processing..."):
-                            new_id = db.commit_sale(
-                                st.session_state['cart'], cart_total, tax_amt, cust_id, 
-                                pay_method, is_wholesale, status, credit_used=credit_applied
-                            )
-                            if 'settings' in st.session_state['data']:
-                                s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
-                                address = s_dict.get("Address", "Modesto, CA")
-                            else: address = "Modesto, CA"
-                            pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied)
-                            st.download_button("📄 Download Invoice", pdf_bytes, file_name=f"Invoice_{new_id}.pdf")
-                            st.session_state['cart'] = []
-                            # Note: No auto-refresh here to keep download button visible, next action will refresh
-                    else: st.error("Select customer.")
+                    if st.button("✅ Complete Order", type="primary", use_container_width=True):
+                        if selected_cust or pay_method == "Cash": # Allow Cash Guest checkout
+                            # Handle Guest
+                            if not selected_cust: cust_id = "Guest"; selected_cust = "Guest"
+                            
+                            status = "Pending" if pay_method == "Invoice (Pay Later)" else "Paid"
+                            with st.spinner("Processing..."):
+                                new_id = db.commit_sale(
+                                    st.session_state['cart'], cart_total, tax_amt, cust_id, 
+                                    pay_method, is_wholesale, status, credit_used=credit_applied
+                                )
+                                # Generate PDF immediately for the success screen
+                                if 'settings' in st.session_state['data']:
+                                    s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
+                                    address = s_dict.get("Address", "Modesto, CA")
+                                else: address = "Modesto, CA"
+                                
+                                pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied)
+                                
+                                # STORE STATE INSTEAD OF DOWNLOADING IMMEDIATELY
+                                st.session_state['last_order'] = {
+                                    'id': new_id,
+                                    'pdf': pdf_bytes
+                                }
+                                st.session_state['checkout_complete'] = True
+                                st.session_state['cart'] = [] # Clear cart
+                                st.rerun()
+                        else: st.error("Select customer (required for non-cash orders).")
 
 # ==========================================
 # 4. CUSTOMERS (Card View & CRM)
