@@ -229,7 +229,13 @@ elif menu == "🛒 Checkout":
         if st.session_state.get('view_last_invoice'):
             st.divider()
             b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-            st.markdown(f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
+            pdf_display = f'''
+                <object data="data:application/pdf;base64,{b64_pdf}" type="application/pdf" width="100%" height="600px">
+                    <p>Your browser can't display this PDF directly. <a href="data:application/pdf;base64,{b64_pdf}" download="Invoice.pdf">Click here to download it.</a></p>
+                </object>
+            '''
+            st.markdown(pdf_display, unsafe_allow_html=True)
+            
             if st.button("❌ Close Preview"):
                 st.session_state['view_last_invoice'] = False
                 st.rerun()
@@ -595,7 +601,14 @@ elif menu == "👥 Customers":
                                 
                                 pdf = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
                                 b64 = base64.b64encode(pdf).decode('utf-8')
-                                st.markdown(f'<embed src="data:application/pdf;base64,{b64}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
+                                
+                                # 3. Object Tag (Robust Method)
+                                pdf_display = f'''
+                                    <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="600px">
+                                        <p>Your browser can't display this PDF directly. <a href="data:application/pdf;base64,{b64}" download="Invoice.pdf">Click here to download it.</a></p>
+                                    </object>
+                                '''
+                                st.markdown(pdf_display, unsafe_allow_html=True)
 
 # ==========================================
 # 5. REPORTS
@@ -691,7 +704,12 @@ elif menu == "📝 Reports":
             
             # Viewer (Fixed for Chrome)
             b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-            st.markdown(f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
+            pdf_display = f'''
+                <object data="data:application/pdf;base64,{b64_pdf}" type="application/pdf" width="100%" height="600px">
+                    <p>Your browser can't display this PDF directly. <a href="data:application/pdf;base64,{b64_pdf}" download="Report.pdf">Click here to download it.</a></p>
+                </object>
+            '''
+            st.markdown(pdf_display, unsafe_allow_html=True)
             
             st.download_button(
                 "⬇️ Download PDF", data=pdf_data,
