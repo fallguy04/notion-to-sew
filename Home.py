@@ -748,17 +748,20 @@ elif menu == "📝 Reports":
             )
             
             # G. Expense Logger
-            with st.expander("➕ Log Expense"):
-                with st.form("expense_form_rep"):
-                    c1, c2 = st.columns(2)
-                    ex_date = c1.date_input("Date")
-                    ex_cat = c2.selectbox("Category", ["Fabric", "Notions", "Rent", "Marketing", "Shipping", "Wages", "Other"])
-                    ex_amt = c1.number_input("Amount ($)", 0.0, 10000.0, 0.0, step=0.01)
-                    ex_desc = c2.text_input("Description")
-                    if st.form_submit_button("Save Expense"):
-                        db.add_expense(ex_date, ex_cat, ex_amt, ex_desc)
-                        auto_refresh()
+            # 1. Get Categories from Settings
+            if 'settings' in st.session_state['data']:
+                s_df = st.session_state['data']['settings']
+                s_dict = dict(zip(s_df['Key'], s_df['Value']))
+                # Fallback if key doesn't exist yet
+                raw_cats = s_dict.get("ExpenseCategories", "Fabric, Notions, Rent, Marketing, Shipping, Wages, Other")
+                # Convert string "A, B, C" -> List ["A", "B", "C"]
+                cat_options = [x.strip() for x in raw_cats.split(",") if x.strip()]
+            else:
+                cat_options = ["Fabric", "Notions", "Rent", "Marketing", "Other"]
 
+            # 2. Use the dynamic list
+            ex_cat = c2.selectbox("Category", cat_options)
+            
     with tab2:
         st.header("Sales Tax Liability")
         c1, c2 = st.columns(2)
@@ -866,6 +869,8 @@ elif menu == "📝 Reports":
 # ==========================================
 elif menu == "⚙️ Settings":
     st.title("Settings")
+    
+    # Load Settings
     if 'settings' in st.session_state['data']:
         raw_settings = st.session_state['data']['settings']
         settings_dict = dict(zip(raw_settings['Key'], raw_settings['Value']))
@@ -873,23 +878,53 @@ elif menu == "⚙️ Settings":
 
     with st.form("settings_form"):
         col1, col2 = st.columns(2)
+        
+        # COLUMN 1: Company Info
         with col1:
             st.subheader("🏢 Company Info")
             c_name = st.text_input("Company Name", value=settings_dict.get("CompanyName", "Notion to Sew"))
             c_addr = st.text_area("Address", value=settings_dict.get("Address", "Modesto, CA"))
-        with col2:
+            
             st.subheader("💰 Financials")
+            venmo_user = st.text_input("Venmo Username", value=settings_dict.get("VenmoUser", ""))
+            
+        # COLUMN 2: Operations
+        with col2:
+            st.subheader("⚙️ Operations")
+            # Tax Rate Logic
             raw_val = settings_dict.get("TaxRate", "0.08")
             try:
                 clean_val = float(str(raw_val).replace("%", "").strip())
+                # If stored as 0.08, display as 8.0. If stored as 8.0, display as 8.0
                 display_rate = clean_val * 100 if clean_val < 1.0 else clean_val
             except ValueError: display_rate = 8.0
+            
             new_rate_percent = st.number_input("Sales Tax Rate (%)", 0.0, 100.0, float(display_rate), step=0.001, format="%.3f")
             next_inv = st.text_input("Next Invoice ID", value=settings_dict.get("NextInvoiceID", "1000"))
-            venmo_user = st.text_input("Venmo Username (for QR)", value=settings_dict.get("VenmoUser", ""))
+            
+            # NEW: Expense Categories Management
+            st.divider()
+            st.markdown("### 🏷️ Expense Categories")
+            st.caption("Separate categories with commas.")
+            default_cats = "Fabric, Notions, Rent, Marketing, Shipping, Wages, Other"
+            current_cats = settings_dict.get("ExpenseCategories", default_cats)
+            new_cats = st.text_area("Categories", value=current_cats, height=100)
+
         st.divider()
-        if st.form_submit_button("Save All Settings", type="primary"):
+        if st.form_submit_button("💾 Save All Settings", type="primary"):
             decimal_rate = new_rate_percent / 100
-            updates = {"CompanyName": c_name, "Address": c_addr, "TaxRate": decimal_rate, "NextInvoiceID": next_inv, "VenmoUser": venmo_user}
+            
+            # Clean up the categories list (remove extra spaces)
+            clean_cats_str = ", ".join([x.strip() for x in new_cats.split(",") if x.strip()])
+            
+            updates = {
+                "CompanyName": c_name, 
+                "Address": c_addr, 
+                "TaxRate": decimal_rate, 
+                "NextInvoiceID": next_inv, 
+                "VenmoUser": venmo_user,
+                "ExpenseCategories": clean_cats_str  # Saving the new list
+            }
             db.update_settings(updates)
-            st.success("✅ Saved!"); auto_refresh()
+            st.success("✅ Settings Saved!")
+            auto_refresh()
