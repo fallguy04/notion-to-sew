@@ -226,16 +226,11 @@ elif menu == "🛒 Checkout":
             st.session_state['last_order'] = None
             st.rerun()
 
-        # Preview Modal
+        # Preview Modal (Fixed with PDF Viewer)
         if st.session_state.get('view_last_invoice'):
             st.divider()
-            b64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-            pdf_display = f'''
-                <object data="data:application/pdf;base64,{b64_pdf}" type="application/pdf" width="100%" height="600px">
-                    <p>Your browser can't display this PDF directly. <a href="data:application/pdf;base64,{b64_pdf}" download="Invoice.pdf">Click here to download it.</a></p>
-                </object>
-            '''
-            st.markdown(pdf_display, unsafe_allow_html=True)
+            # DIRECT PDF RENDER (No Base64 needed)
+            pdf_viewer(input=st.session_state['last_order']['pdf'], width=700, height=600)
             
             if st.button("❌ Close Preview"):
                 st.session_state['view_last_invoice'] = False
