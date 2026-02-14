@@ -376,7 +376,7 @@ elif st.session_state['page'] == 'success':
                 # Use raw bytes
                 pdf_data = st.session_state['last_kiosk_order']['pdf']
                 
-                pdf_viewer(input=pdf_data, width=700, height=600)
+                pdf_viewer(input=pdf_data, width=1000, height=1000)
                 
                 if st.button("Close Receipt"):
                     st.session_state['view_kiosk_receipt'] = False
