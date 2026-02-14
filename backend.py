@@ -297,102 +297,77 @@ def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, 
 
 # --- REPORT GENERATION ---
 def generate_income_statement_pdf(start_date, end_date, financials):
-    """
-    Generates a formal Income Statement PDF.
-    financials: dict containing all the calculated totals
-    """
     pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # 1. Header
+    # 1. Header (Tighter spacing)
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "Notion to Sew", 0, 1, 'C')
+    pdf.cell(0, 8, "Notion to Sew", 0, 1, 'C')
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Income Statement - Classified", 0, 1, 'C')
+    pdf.cell(0, 6, "Income Statement - Classified", 0, 1, 'C')
     
     pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 5, f"Reporting Period: {start_date.strftime('%m/%d/%Y')} through {end_date.strftime('%m/%d/%Y')}", 0, 1, 'C')
-    pdf.ln(5)
+    pdf.cell(0, 5, f"Period: {start_date.strftime('%m/%d/%Y')} - {end_date.strftime('%m/%d/%Y')}", 0, 1, 'C')
+    pdf.ln(5) # Small gap
     
     # Helper for lines
     def add_line(label, amount, bold=False, indent=0, is_total=False):
         pdf.set_font("Arial", 'B' if bold else '', 10)
-        
-        # Indentation
         x_start = 10 + (indent * 5)
         pdf.set_x(x_start)
         
-        # Label
-        # Calculate dots
-        page_width = 190 # Approx A4 width minus margins
-        label_width = pdf.get_string_width(label)
+        page_width = 190
         amount_str = f"${amount:,.2f}" if amount >= 0 else f"(${abs(amount):,.2f})"
-        amount_width = pdf.get_string_width(amount_str)
         
-        dots_width = page_width - x_start - amount_width - 15 # Buffer
-        dots = ""
-        if not is_total and not bold:
-             # Simple dot filler logic
-            dots = "." * int(dots_width / 2) # Rough estimate
-            
-        pdf.cell(page_width - x_start - 30, 6, f"{label} {dots}", 0, 0)
-        pdf.cell(30, 6, amount_str, 0, 1, 'R')
+        # Draw label
+        pdf.cell(100, 5, label, 0, 0)
+        
+        # Draw Amount aligned right
+        pdf.set_x(page_width - 40)
+        pdf.cell(30, 5, amount_str, 0, 1, 'R')
 
     # 2. REVENUE
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 6, "REVENUE", 0, 1)
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 6, "Income", 0, 1)
+    pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, "REVENUE", 0, 1)
     
     add_line("Retail Sales (Taxable)", financials['retail_sales'], indent=1)
     add_line("Wholesale Sales (Non-Taxable)", financials['wholesale_sales'], indent=1)
-    # add_line("Freight Revenue", 0.0, indent=1) # Placeholder if you track shipping income separately later
     
-    pdf.ln(2)
-    add_line("Total Income:", financials['total_income'], bold=True, indent=1)
+    pdf.ln(1)
     add_line("Total Revenue:", financials['total_income'], bold=True, indent=0)
     pdf.ln(3)
 
     # 3. COGS
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 6, "COST OF GOODS SOLD", 0, 1)
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 6, "Cost of Goods", 0, 1)
+    pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, "COST OF GOODS SOLD", 0, 1)
     
     add_line("Cost of Goods Sold", financials['cogs'], indent=1)
     
-    pdf.ln(2)
-    add_line("Total Cost of Goods Sold:", financials['cogs'], bold=True, indent=0)
+    pdf.ln(1)
+    add_line("Total COGS:", financials['cogs'], bold=True, indent=0)
     pdf.ln(2)
     add_line("Gross Profit:", financials['gross_profit'], bold=True, indent=0)
-    pdf.ln(5)
+    pdf.ln(4)
 
     # 4. EXPENSES
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 6, "EXPENSES", 0, 1)
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 6, "Operating Expense", 0, 1)
+    pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, "EXPENSES", 0, 1)
     
     if financials['expenses_breakdown']:
         for cat, amt in financials['expenses_breakdown'].items():
-            add_line(f"{cat} Expense", amt, indent=1)
+            add_line(f"{cat}", amt, indent=1)
     else:
-        add_line("No Operating Expenses Recorded", 0.0, indent=1)
+        add_line("No Expenses Recorded", 0.0, indent=1)
 
-    pdf.ln(2)
-    add_line("Total Operating Expense:", financials['total_expenses'], bold=True, indent=0)
-    pdf.ln(2)
+    pdf.ln(1)
     add_line("Total Expenses:", financials['total_expenses'], bold=True, indent=0)
     
-    # 5. NET PROFIT
+    # 5. NET PROFIT (Big & Bold)
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
-    add_line("Profit / (Loss):", financials['net_profit'], bold=True)
+    pdf.cell(0, 8, f"Net Profit / (Loss):   ${financials['net_profit']:,.2f}", 0, 1, 'R')
     
-    # Footer
-    pdf.set_y(-30)
+    # Footer (Absolute positioning to ensure it stays on page 1 if space permits)
+    pdf.set_y(-20)
     pdf.set_font("Arial", 'I', 8)
-    pdf.cell(0, 5, f"Run On: {datetime.now().strftime('%m/%d/%Y')}", 0, 1)
-    pdf.cell(0, 5, "Page 1 of 1", 0, 1, 'C')
+    pdf.cell(0, 5, f"Generated: {datetime.now().strftime('%m/%d/%Y %H:%M')}", 0, 1, 'C')
 
     return pdf.output(dest='S').encode('latin-1')
