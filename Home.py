@@ -198,14 +198,14 @@ elif menu == "📦 Inventory":
 elif menu == "🛒 Checkout":
     st.title("Point of Sale")
 
-    # --- SUCCESS STATE (New!) ---
+    # --- SUCCESS STATE ---
     if st.session_state.get('checkout_complete'):
         st.balloons()
         st.success(f"✅ Order #{st.session_state['last_order']['id']} Recorded Successfully!")
         
         c1, c2, c3 = st.columns(3)
         
-        # 1. View Invoice (Modal)
+        # 1. View Invoice
         if c1.button("👁️ View Invoice", use_container_width=True):
             st.session_state['view_last_invoice'] = True
         
@@ -226,20 +226,22 @@ elif menu == "🛒 Checkout":
             st.session_state['last_order'] = None
             st.rerun()
 
-        # Preview Modal (Fixed with PDF Viewer)
+        # Preview Modal (JUMBO SIZE)
         if st.session_state.get('view_last_invoice'):
             st.divider()
-            # DIRECT PDF RENDER (No Base64 needed)
-            pdf_viewer(input=st.session_state['last_order']['pdf'], width=700, height=600)
+            st.caption("ℹ️ To print: Download the PDF and print from your computer.")
+            # Increased Width and Height significantly
+            pdf_viewer(input=st.session_state['last_order']['pdf'], width=1000, height=1000)
             
             if st.button("❌ Close Preview"):
                 st.session_state['view_last_invoice'] = False
                 st.rerun()
 
-    # --- NORMAL CHECKOUT ---
+    # --- NORMAL CHECKOUT SCREEN ---
     else:
         c1, c2 = st.columns([1.5, 1])
         
+        # LEFT: Add Item
         with c1:
             st.subheader("Add Item")
             is_wholesale = st.checkbox("Apply Wholesale Pricing?", value=False)
@@ -266,10 +268,12 @@ elif menu == "🛒 Checkout":
                         })
                         st.rerun()
 
+        # RIGHT: Cart & Pay
         with c2:
             with st.container(border=True):
                 st.subheader("Current Order")
-                if not st.session_state['cart']: st.info("Cart is empty.")
+                if not st.session_state['cart']: 
+                    st.info("Cart is empty.")
                 else:
                     subtotal = sum(item['total'] for item in st.session_state['cart'])
                     # List Items
@@ -341,7 +345,7 @@ elif menu == "🛒 Checkout":
                                     st.session_state['cart'], cart_total, tax_amt, cust_id, 
                                     pay_method, is_wholesale, status, credit_used=credit_applied
                                 )
-                                # Generate PDF immediately for the success screen
+                                # Generate PDF
                                 if 'settings' in st.session_state['data']:
                                     s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
                                     address = s_dict.get("Address", "Modesto, CA")
@@ -349,13 +353,13 @@ elif menu == "🛒 Checkout":
                                 
                                 pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied)
                                 
-                                # STORE STATE & TRIGGER SUCCESS SCREEN
+                                # Store State
                                 st.session_state['last_order'] = {
                                     'id': new_id,
                                     'pdf': pdf_bytes
                                 }
                                 st.session_state['checkout_complete'] = True
-                                st.session_state['cart'] = [] # Clear cart
+                                st.session_state['cart'] = []
                                 st.rerun()
                         else: st.error("Select customer (required for non-cash orders).")
 
@@ -602,7 +606,7 @@ elif menu == "👥 Customers":
                                 pdf_bytes = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
                                 
                                 # 2. Use the Viewer (No Base64 needed!)
-                                pdf_viewer(input=pdf_bytes, width=700, height=600)
+                                pdf_viewer(input=pdf_bytes, width=1000, height=800)
 
 # ==========================================
 # 5. REPORTS
@@ -701,7 +705,7 @@ elif menu == "📝 Reports":
             # Preview
             st.divider()
             # No base64 encoding needed
-            pdf_viewer(input=pdf_data, width=700, height=800)
+            pdf_viewer(input=pdf_data, width=1000, height=1000)
             
             st.download_button(
                 "⬇️ Download PDF", data=pdf_data,
