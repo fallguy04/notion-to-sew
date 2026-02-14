@@ -776,13 +776,12 @@ elif menu == "📝 Reports":
         m1, m2 = st.columns(2)
         m1.metric("Tax Collected", f"${total_tax:,.2f}"); m2.metric("Taxable Sales", f"${taxable_sales:,.2f}")
 
-    # --- TAB 3: TOP SELLERS (Fixed) ---
+    # --- TAB 3: TOP SELLERS (Product Focused) ---
     with tab3:
         st.header("🏆 Product Performance")
         
         # 1. Controls
         c1, c2, c3 = st.columns([1, 1, 2])
-        # FIX: Use date.today() instead of just 'today'
         ts_start = c1.date_input("Start Date", value=date(date.today().year, 1, 1), key="ts_start")
         ts_end = c2.date_input("End Date", value=date.today(), key="ts_end")
         rank_by = c3.radio("Rank Products By:", ["Quantity Sold", "Total Revenue ($)", "Net Profit ($)"], horizontal=True)
@@ -806,42 +805,23 @@ elif menu == "📝 Reports":
             filtered_items['QtySold'] = pd.to_numeric(filtered_items['QtySold'], errors='coerce').fillna(0)
             filtered_items['Price'] = pd.to_numeric(filtered_items['Price'], errors='coerce').fillna(0)
             
-            # Merge with Inventory to get COST (for Profit calc)
+            # Merge with Inventory to get COST
             if 'inventory' in st.session_state['data']:
-                inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost', 'Category']].copy()
+                inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost']].copy()
                 inv_ref['SKU'] = inv_ref['SKU'].astype(str)
                 filtered_items['SKU'] = filtered_items['SKU'].astype(str)
                 
                 # Merge
                 full_data = filtered_items.merge(inv_ref, on='SKU', how='left')
                 full_data['Cost'] = pd.to_numeric(full_data['Cost'], errors='coerce').fillna(0)
-                full_data['Category'] = full_data['Category'].fillna("Uncategorized")
             else:
                 full_data = filtered_items
                 full_data['Cost'] = 0.0
-                full_data['Category'] = "Uncategorized"
 
-            # Calculate Metrics per Row
+            # Calculate Metrics
             full_data['Revenue'] = full_data['QtySold'] * full_data['Price']
             full_data['TotalCost'] = full_data['QtySold'] * full_data['Cost']
             full_data['Profit'] = full_data['Revenue'] - full_data['TotalCost']
-            
-            # --- VISUALIZATION 1: BY CATEGORY ---
-            st.subheader("📦 Sales by Category")
-            cat_group = full_data.groupby('Category')[['QtySold', 'Revenue', 'Profit']].sum().reset_index()
-            
-            # Show simple bar chart based on selection
-            if "Revenue" in rank_by:
-                st.bar_chart(cat_group.set_index('Category')['Revenue'], color="#2ecc71") # Green
-            elif "Profit" in rank_by:
-                st.bar_chart(cat_group.set_index('Category')['Profit'], color="#f1c40f") # Gold
-            else:
-                st.bar_chart(cat_group.set_index('Category')['QtySold'], color="#3498db") # Blue
-
-            st.divider()
-
-            # --- VISUALIZATION 2: LEADERBOARD ---
-            st.subheader("⭐ Top 20 Products")
             
             # Group by Product
             product_group = full_data.groupby(['Name', 'SKU'])[['QtySold', 'Revenue', 'Profit']].sum().reset_index()
@@ -849,17 +829,28 @@ elif menu == "📝 Reports":
             # Sort
             if "Revenue" in rank_by:
                 sorted_df = product_group.sort_values(by='Revenue', ascending=False)
-                sort_col = "Revenue"
+                metric_col = 'Revenue'
+                chart_color = "#2ecc71" # Green
             elif "Profit" in rank_by:
                 sorted_df = product_group.sort_values(by='Profit', ascending=False)
-                sort_col = "Profit"
+                metric_col = 'Profit'
+                chart_color = "#f1c40f" # Gold
             else:
                 sorted_df = product_group.sort_values(by='QtySold', ascending=False)
-                sort_col = "QtySold"
+                metric_col = 'QtySold'
+                chart_color = "#3498db" # Blue
             
-            # Display Table
+            # --- VISUALIZATION: TOP 10 CHART ---
+            st.subheader(f"📊 Top 10 by {rank_by.split('(')[0].strip()}")
+            top_10 = sorted_df.head(10).set_index('Name')
+            st.bar_chart(top_10[metric_col], color=chart_color)
+            
+            st.divider()
+
+            # --- DETAILED TABLE ---
+            st.subheader("📋 Product Leaderboard")
             st.dataframe(
-                sorted_df.head(20),
+                sorted_df.head(50), # Showing top 50 rows
                 use_container_width=True,
                 hide_index=True,
                 column_config={
