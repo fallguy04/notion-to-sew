@@ -330,7 +330,7 @@ elif menu == "🛒 Checkout":
                     if pay_method == "Venmo" and venmo_user:
                         st.image(f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://venmo.com/u/{venmo_user}", width=150, caption=f"@{venmo_user}")
 
-i                   if st.button("✅ Complete Order", type="primary", use_container_width=True):
+                    if st.button("✅ Complete Order", type="primary", use_container_width=True):
                         if selected_cust or pay_method == "Cash": # Allow Cash Guest checkout
                             # Handle Guest
                             if not selected_cust: cust_id = "Guest"; selected_cust = "Guest"
