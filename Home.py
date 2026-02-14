@@ -776,14 +776,15 @@ elif menu == "📝 Reports":
         m1, m2 = st.columns(2)
         m1.metric("Tax Collected", f"${total_tax:,.2f}"); m2.metric("Taxable Sales", f"${taxable_sales:,.2f}")
 
-    # --- TAB 3: TOP SELLERS (UPGRADED) ---
+    # --- TAB 3: TOP SELLERS (Fixed) ---
     with tab3:
         st.header("🏆 Product Performance")
         
         # 1. Controls
         c1, c2, c3 = st.columns([1, 1, 2])
+        # FIX: Use date.today() instead of just 'today'
         ts_start = c1.date_input("Start Date", value=date(date.today().year, 1, 1), key="ts_start")
-        ts_end = c2.date_input("End Date", value=today, key="ts_end")
+        ts_end = c2.date_input("End Date", value=date.today(), key="ts_end")
         rank_by = c3.radio("Rank Products By:", ["Quantity Sold", "Total Revenue ($)", "Net Profit ($)"], horizontal=True)
         
         # 2. Data Preparation
