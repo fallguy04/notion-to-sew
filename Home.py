@@ -595,7 +595,7 @@ elif menu == "👥 Customers":
                                 
                                 pdf = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
                                 b64 = base64.b64encode(pdf).decode('utf-8')
-                                st.markdown(f'<embed src="data:application/pdf;base64,{b64pdf}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
+                                st.markdown(f'<embed src="data:application/pdf;base64,{b64}" width="100%" height="600" type="application/pdf">', unsafe_allow_html=True)
 
 # ==========================================
 # 5. REPORTS
