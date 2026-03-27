@@ -319,8 +319,11 @@ div[data-testid="stForm"] { border: none !important; background: transparent !im
 """, unsafe_allow_html=True)
 
 # --- INIT ---
-if 'data' not in st.session_state:
+if 'data' not in st.session_state or not st.session_state['data']:
     st.session_state['data'] = db.get_data()
+    if not st.session_state['data']:
+        st.warning("⚠️ Could not load data from Google Sheets.")
+        st.stop()
 if 'kiosk_cart' not in st.session_state: st.session_state['kiosk_cart'] = []
 if 'page' not in st.session_state: st.session_state['page'] = 'shop'
 if 'show_admin_login' not in st.session_state: st.session_state['show_admin_login'] = False

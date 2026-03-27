@@ -38,7 +38,7 @@ def get_data():
             "expenses": expenses_df
         }
     except Exception as e:
-        st.error(f"🚨 Google Sheets Error: {e}")
+        st.error(f"🚨 Database Error: {e}")
         return {}
 
 # --- HELPER: Force Cache Clear ---
