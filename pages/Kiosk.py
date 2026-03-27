@@ -6,49 +6,15 @@ import streamlit.components.v1 as components
 # --- CONFIG (iPad Optimized - Refined) ---
 st.set_page_config(page_title="Kiosk | Notion to Sew", layout="wide", initial_sidebar_state="collapsed")
 
-# --- KEEP APP AWAKE + INJECT ADMIN FAB INTO PARENT DOM ---
-components.html("""
-<script>
-// Keep alive
-setInterval(function() { fetch('/_stcore/health').catch(function(){}); }, 540000);
-
-// Admin FAB — injected into parent document so position:fixed works outside the iframe
-(function injectFab() {
-    var p = window.parent.document;
-    if (p.getElementById('admin-fab')) return;
-
-    var s = p.createElement('style');
-    s.id = 'admin-fab-style';
-    s.textContent = [
-        '#admin-fab {',
-        '  position:fixed; top:16px; right:16px;',
-        '  width:42px; height:42px; border-radius:50%;',
-        '  background:rgba(255,255,255,0.5);',
-        '  border:1px solid rgba(218,220,224,0.6);',
-        '  cursor:pointer; display:flex; align-items:center; justify-content:center;',
-        '  font-size:16px; z-index:99999;',
-        '  box-shadow:0 1px 4px rgba(0,0,0,0.08);',
-        '  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);',
-        '  opacity:0.22; transition:opacity .25s,box-shadow .25s,background .25s;',
-        '  padding:0; outline:none; line-height:1;',
-        '}',
-        '#admin-fab:hover { opacity:0.85; box-shadow:0 2px 10px rgba(0,0,0,0.18); background:rgba(255,255,255,0.95); }'
-    ].join('');
-    p.head.appendChild(s);
-
-    var btn = p.createElement('button');
-    btn.id = 'admin-fab';
-    btn.title = 'Admin Login';
-    btn.innerHTML = '🔐';
-    btn.addEventListener('click', function() {
-        var u = new URL(window.parent.location.href);
-        u.searchParams.set('admin_open', '1');
-        window.parent.location.href = u.toString();
-    });
-    p.body.appendChild(btn);
-})();
-</script>
-""", height=0)
+# --- KEEP APP AWAKE: pings Streamlit health endpoint every 9 min so the app never sleeps ---
+components.html(
+    """<script>
+    setInterval(function() {
+        fetch('/_stcore/health').catch(function(){});
+    }, 540000);
+    </script>""",
+    height=0
+)
 
 # --- CUSTOM CSS (ChromeOS / Google 2026 Design) ---
 st.markdown("""
@@ -404,6 +370,30 @@ with st.sidebar:
         else:
             st.error("Incorrect PIN")
 
+# --- ADMIN FAB (anchor link — position:fixed works in main page, href survives Streamlit's HTML) ---
+st.markdown("""
+<style>
+#admin-fab {
+    position: fixed; top: 16px; right: 16px;
+    width: 42px; height: 42px; border-radius: 50%;
+    background: rgba(255,255,255,0.5);
+    border: 1px solid rgba(218,220,224,0.6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; z-index: 99999;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    opacity: 0.22; transition: opacity .25s, box-shadow .25s, background .25s;
+    text-decoration: none; line-height: 1;
+}
+#admin-fab:hover {
+    opacity: 0.85;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+    background: rgba(255,255,255,0.95);
+}
+</style>
+<a id="admin-fab" href="?admin_open=1" title="Admin Login">🔐</a>
+""", unsafe_allow_html=True)
+
 # ==========================================
 # PAGE 1: THE SHOP
 # ==========================================
@@ -415,7 +405,10 @@ if st.session_state['page'] == 'shop':
     with c1:
         st.markdown("""
         <div class="kiosk-header">
-            <div class="kiosk-header-title">Type any item name or number below</div>
+            <div>
+                <div class="kiosk-header-title">🧵 Notion to Sew</div>
+                <div class="kiosk-header-sub">Type any item name or number below</div>
+            </div>
         </div>""", unsafe_allow_html=True)
     with c2:
         st.write("")
