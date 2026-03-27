@@ -1,11 +1,15 @@
 import uuid
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
 import streamlit as st
 import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 from fpdf import FPDF
-import time
 
 # --- CONNECTIVITY ---
 @st.cache_resource
@@ -21,12 +25,17 @@ def get_data():
     client = get_client()
     try:
         sh = client.open("NotionToSew_DB")
+        try:
+            expenses_df = pd.DataFrame(sh.worksheet("Expenses").get_all_records())
+        except Exception:
+            expenses_df = pd.DataFrame()
         return {
             "inventory": pd.DataFrame(sh.worksheet("Inventory").get_all_records()),
             "transactions": pd.DataFrame(sh.worksheet("Transactions").get_all_records()),
             "items": pd.DataFrame(sh.worksheet("TransactionItems").get_all_records()),
             "customers": pd.DataFrame(sh.worksheet("Customers").get_all_records()),
-            "settings": pd.DataFrame(sh.worksheet("Settings").get_all_records())
+            "settings": pd.DataFrame(sh.worksheet("Settings").get_all_records()),
+            "expenses": expenses_df
         }
     except gspread.exceptions.APIError as e:
         if "429" in str(e):
@@ -40,6 +49,23 @@ def get_data():
 def force_refresh():
     get_data.clear()
     return True
+
+def get_settings_dict():
+    """Returns the Settings sheet as a plain key→value dict."""
+    data = get_data()
+    if "settings" not in data or data["settings"].empty:
+        return {}
+    return dict(zip(data["settings"]["Key"], data["settings"]["Value"]))
+
+def get_tax_rate() -> float:
+    """Returns the tax rate as a decimal (e.g. 0.0875)."""
+    s = get_settings_dict()
+    raw = s.get("TaxRate", "0.08")
+    try:
+        val = float(str(raw).replace("%", "").strip())
+        return val / 100 if val > 1 else val
+    except Exception:
+        return 0.0
 
 # --- LOGIC & WRITES ---
 
@@ -80,7 +106,7 @@ def restock_item(sku, qty_to_add, new_cost=None):
             ws.update_cell(cell.row, 6, new_cost)
             
         return force_refresh()
-    except Exception as e:
+    except Exception:
         return False
 
 # CRITICAL FIX: Safer Batch Update
@@ -164,8 +190,8 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
             curr_stock = int(ws_inv.cell(row_num, 4).value or 0) 
             updates.append({'range': f'D{row_num}', 'values': [[max(0, curr_stock - item['qty'])]]})
     if updates: ws_inv.batch_update(updates)
-            
-    return invoice_id # Note: commit_sale doesn't return force_refresh bool, but cache is cleared inside next call
+    force_refresh()
+    return invoice_id
 
 def mark_invoice_paid(invoice_id):
     client = get_client()
@@ -294,6 +320,41 @@ def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, 
         pdf.cell(165, 6, "Store Credit Used:", 0, 0, 'R'); pdf.cell(25, 6, f"-${credit_applied:.2f}", 0, 1, 'R')
     pdf.set_font("Helvetica", "B", 12); pdf.cell(165, 8, "AMOUNT DUE:", 0, 0, 'R'); pdf.cell(25, 8, f"${max(0.0, total - credit_applied):.2f}", 0, 1, 'R')
     return pdf.output(dest='S').encode('latin-1')
+
+# --- EMAIL RECEIPT ---
+def send_receipt_email(to_email: str, invoice_id: str, pdf_bytes: bytes):
+    """Sends the PDF receipt as an email attachment via Gmail SMTP.
+    Requires [email] sender and app_password keys in st.secrets.
+    """
+    sender = st.secrets["email"]["sender"]
+    password = st.secrets["email"]["app_password"]
+
+    msg = MIMEMultipart()
+    msg['From'] = f"Notion to Sew <{sender}>"
+    msg['To'] = to_email
+    msg['Subject'] = f"Your Receipt from Notion to Sew — Invoice #{invoice_id}"
+
+    body = (
+        f"Hi there!\n\n"
+        f"Thank you for shopping at Notion to Sew. "
+        f"Your receipt for Invoice #{invoice_id} is attached as a PDF.\n\n"
+        f"Questions? Just reply to this email.\n\n"
+        f"— Notion to Sew"
+    )
+    msg.attach(MIMEText(body, 'plain'))
+
+    attachment = MIMEBase('application', 'pdf')
+    attachment.set_payload(pdf_bytes)
+    encoders.encode_base64(attachment)
+    attachment.add_header(
+        'Content-Disposition',
+        f'attachment; filename="Receipt_{invoice_id}.pdf"'
+    )
+    msg.attach(attachment)
+
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(sender, password)
+        smtp.send_message(msg)
 
 # --- REPORT GENERATION ---
 def generate_income_statement_pdf(start_date, end_date, financials):

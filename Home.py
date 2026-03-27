@@ -3,7 +3,6 @@ import pandas as pd
 import backend as db
 from datetime import datetime, date
 from streamlit_pdf_viewer import pdf_viewer
-import base64
 
 # --- CONFIG ---
 st.set_page_config(page_title="Admin | Notion to Sew", layout="wide", page_icon="🧵")
@@ -11,15 +10,266 @@ st.set_page_config(page_title="Admin | Notion to Sew", layout="wide", page_icon=
 # --- CUSTOM CSS ---
 st.markdown("""
 <style>
-    .stApp { background-color: #f8f9fa; }
-    div[data-testid="stMetric"], div[data-testid="stContainer"] {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .stButton button { border-radius: 5px; }
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+
+/* ── GLOBAL ──
+   NO `span`   → breaks sidebar toggle icon (Material Icons ligature is in a <span>)
+   NO `[class*="css"]` → hits Streamlit's emotion class names; destroys popup menus  ── */
+html, body, p, label, input, textarea, select {
+    font-family: 'Roboto', sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+}
+.stApp, .stMarkdown, .stText, .element-container {
+    font-family: 'Roboto', sans-serif !important;
+}
+.stApp { background: #f8f9fa !important; }
+#MainMenu, footer { visibility: hidden; }
+
+/* ── SIDEBAR — Light / ChromeOS style ── */
+section[data-testid="stSidebar"] {
+    background: #ffffff !important;
+    border-right: 1px solid #dadce0 !important;
+}
+section[data-testid="stSidebar"] .stRadio > label { display: none !important; }
+section[data-testid="stSidebar"] .stRadio > div { gap: 1px !important; }
+section[data-testid="stSidebar"] .stRadio label {
+    font-family: 'Roboto', sans-serif !important;
+    color: #3c4043 !important;
+    font-size: 0.875rem !important;
+    font-weight: 400 !important;
+    padding: 10px 16px 10px 20px !important;
+    border-radius: 0 24px 24px 0 !important;
+    margin: 1px 12px 1px 0 !important;
+    transition: background 0.1s !important;
+    cursor: pointer !important;
+    display: block !important;
+    border-left: 3px solid transparent !important;
+}
+section[data-testid="stSidebar"] .stRadio label:hover {
+    background: #f1f3f4 !important;
+}
+section[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) label {
+    background: #e8f0fe !important;
+    color: #1a73e8 !important;
+    font-weight: 500 !important;
+    border-left: 3px solid #1a73e8 !important;
+}
+section[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child { display: none !important; }
+section[data-testid="stSidebar"] hr { border-color: #dadce0 !important; margin: 8px 16px !important; }
+section[data-testid="stSidebar"] .stButton > button {
+    font-family: 'Roboto', sans-serif !important;
+    background: transparent !important;
+    color: #3c4043 !important;
+    border: 1px solid #dadce0 !important;
+    border-radius: 4px !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    min-height: 32px !important;
+    padding: 4px 12px !important;
+    width: calc(100% - 32px) !important;
+    margin: 2px 16px !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+    background: #f1f3f4 !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+/* ── TYPOGRAPHY ── */
+h1 { font-family: 'Roboto', sans-serif !important; font-size: 1.5rem !important; font-weight: 400 !important; color: #202124 !important; letter-spacing: 0 !important; }
+h2 { font-family: 'Roboto', sans-serif !important; font-size: 1.1rem !important; font-weight: 500 !important; color: #202124 !important; letter-spacing: 0.01em !important; }
+h3 { font-family: 'Roboto', sans-serif !important; font-size: 0.95rem !important; font-weight: 500 !important; color: #202124 !important; }
+p, .stMarkdown p { font-family: 'Roboto', sans-serif !important; color: #5f6368 !important; font-size: 0.875rem !important; line-height: 1.5 !important; }
+
+/* ── METRIC CARDS ── */
+div[data-testid="stMetric"] {
+    background: #ffffff !important;
+    border: 1px solid #dadce0 !important;
+    border-radius: 8px !important;
+    padding: 16px 20px !important;
+    box-shadow: 0 1px 2px rgba(60,64,67,0.1), 0 1px 3px rgba(60,64,67,0.08) !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+div[data-testid="stMetric"]::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: #1a73e8;
+}
+div[data-testid="stMetricLabel"] > div {
+    font-family: 'Roboto', sans-serif !important;
+    font-size: 0.7rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+    color: #5f6368 !important;
+}
+div[data-testid="stMetricValue"] > div {
+    font-family: 'Roboto', sans-serif !important;
+    font-size: 1.8rem !important;
+    font-weight: 400 !important;
+    color: #202124 !important;
+    letter-spacing: -0.01em !important;
+    line-height: 1.2 !important;
+}
+div[data-testid="stMetricDelta"] > div {
+    font-family: 'Roboto', sans-serif !important;
+    font-size: 0.8rem !important;
+}
+
+/* ── CARDS ── */
+div[data-testid="stContainer"] {
+    background: #ffffff !important;
+    border: 1px solid #dadce0 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 1px 2px rgba(60,64,67,0.1) !important;
+}
+
+/* ── BUTTONS — target only Streamlit user buttons, not system chrome ── */
+/* Ensure text inside buttons (rendered in <span>) inherits button color, not global rules */
+.stButton > button *, .stDownloadButton > button *, .stFormSubmitButton > button * {
+    color: inherit !important;
+}
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+    font-family: 'Roboto', sans-serif !important;
+    border-radius: 4px !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
+    transition: background 0.1s, box-shadow 0.1s !important;
+    min-height: 36px !important;
+    padding: 6px 16px !important;
+    height: auto !important;
+}
+.stButton > button[kind="primary"], .stFormSubmitButton > button {
+    background: #1a73e8 !important;
+    border: none !important;
+    color: #ffffff !important;
+    box-shadow: 0 1px 2px rgba(26,115,232,0.3) !important;
+}
+.stButton > button[kind="primary"]:hover, .stFormSubmitButton > button:hover {
+    background: #1765cc !important;
+    box-shadow: 0 1px 3px rgba(26,115,232,0.4), 0 4px 8px rgba(26,115,232,0.2) !important;
+    transform: none !important;
+}
+.stButton > button:not([kind="primary"]) {
+    background: #ffffff !important;
+    border: 1px solid #dadce0 !important;
+    color: #1a73e8 !important;
+    box-shadow: 0 1px 2px rgba(60,64,67,0.06) !important;
+}
+.stButton > button:not([kind="primary"]):hover {
+    background: #f8f9fa !important;
+    border-color: #d2e3fc !important;
+    box-shadow: 0 1px 3px rgba(60,64,67,0.1) !important;
+    transform: none !important;
+}
+
+/* ── TABS — underline style (Google Workspace) ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: transparent !important;
+    border-bottom: 1px solid #dadce0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    gap: 0 !important;
+}
+.stTabs [data-baseweb="tab"] {
+    font-family: 'Roboto', sans-serif !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+    padding: 10px 20px !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    color: #5f6368 !important;
+    border: none !important;
+    border-bottom: 3px solid transparent !important;
+    transition: color 0.1s, border-color 0.1s !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background: transparent !important;
+    color: #1a73e8 !important;
+    border-bottom: 3px solid #1a73e8 !important;
+    font-weight: 500 !important;
+    box-shadow: none !important;
+}
+.stTabs [data-baseweb="tab-border"],
+.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+
+/* ── INPUTS ── */
+div[data-baseweb="input"] > div,
+div[data-baseweb="textarea"] textarea,
+div[data-baseweb="select"] > div {
+    font-family: 'Roboto', sans-serif !important;
+    border-radius: 4px !important;
+    border-color: #dadce0 !important;
+    background: #ffffff !important;
+    font-size: 0.875rem !important;
+    outline: none !important;
+}
+input, textarea {
+    outline: none !important;
+}
+div[data-baseweb="input"]:focus-within > div,
+div[data-baseweb="textarea"]:focus-within textarea {
+    border-color: #1a73e8 !important;
+    box-shadow: 0 0 0 2px rgba(26,115,232,0.15) !important;
+}
+
+/* ── DATA TABLES ── */
+div[data-testid="stDataFrame"], div[data-testid="stDataEditor"] {
+    border: 1px solid #dadce0 !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+}
+div[data-testid="stDataFrame"] th, div[data-testid="stDataEditor"] th {
+    background: #f8f9fa !important;
+    color: #5f6368 !important;
+    font-family: 'Roboto', sans-serif !important;
+    font-size: 0.72rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.06em !important;
+}
+
+/* ── EXPANDERS ── */
+div[data-testid="stExpander"] {
+    background: #ffffff !important;
+    border: 1px solid #dadce0 !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+}
+
+/* ── ALERTS ── */
+div[data-testid="stAlert"] { border-radius: 8px !important; font-size: 0.875rem !important; }
+
+/* ── MISC ── */
+hr { border-color: #dadce0 !important; }
+div[data-testid="stForm"] { background: #ffffff !important; border: 1px solid #dadce0 !important; border-radius: 8px !important; }
+div[data-testid="stToast"] { border-radius: 8px !important; }
+
+/* ── PAGE HEADER ── */
+.nts-page-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #dadce0;
+    margin-bottom: 24px;
+}
+.nts-page-icon {
+    width: 40px; height: 40px;
+    background: #e8f0fe;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+}
+.nts-page-header h1 { margin: 0 !important; padding: 0 !important; border: none !important; }
+.nts-page-header p { margin: 2px 0 0 !important; font-size: 0.8rem !important; color: #5f6368 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -30,17 +280,70 @@ def auto_refresh():
         del st.session_state['data']
     st.rerun()
 
+# --- HELPER: Branded page header ---
+def page_header(icon: str, title: str, subtitle: str = ""):
+    sub = f"<p>{subtitle}</p>" if subtitle else ""
+    st.markdown(f"""
+    <div class="nts-page-header">
+        <div class="nts-page-icon">{icon}</div>
+        <div><h1>{title}</h1>{sub}</div>
+    </div>""", unsafe_allow_html=True)
+
+# --- HELPER: Build PDF from stored transaction ---
+def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
+    """Reconstruct a PDF for any historical transaction from session data."""
+    data = st.session_state['data']
+    items_df = data['items'].copy()
+    items_df['TransactionID'] = items_df['TransactionID'].astype(str)
+    inv_items = items_df[items_df['TransactionID'] == transaction_id]
+    cart = []
+    for _, item in inv_items.iterrows():
+        try: q, p = int(item['QtySold']), float(item['Price'])
+        except: q, p = 1, 0.0
+        cart.append({"sku": str(item.get('SKU', '')), "name": item['Name'], "qty": q, "price": p})
+    addr = "Modesto, CA"
+    if 'settings' in data:
+        s = dict(zip(data['settings']['Key'], data['settings']['Value']))
+        addr = s.get("Address", addr)
+    trans_df = data['transactions']
+    t = trans_df[trans_df['TransactionID'].astype(str) == transaction_id]
+    tax, total, due = 0.0, 0.0, ""
+    if not t.empty:
+        r = t.iloc[0]
+        try: tax = float(r['TaxAmount'] or 0)
+        except: pass
+        try: total = float(r['TotalAmount'] or 0)
+        except: pass
+        due = str(r.get('DueDate', ''))
+    return db.create_pdf(transaction_id, customer_name, addr, cart, 0, tax, total, due)
+
 # --- INIT STATE ---
 if 'data' not in st.session_state:
     with st.spinner("Connecting to Headquarters..."):
         st.session_state['data'] = db.get_data()
 if 'cart' not in st.session_state: st.session_state['cart'] = []
 
+# --- DEFAULT: REDIRECT TO KIOSK unless mom has authenticated ---
+if not st.session_state.get('admin_authenticated'):
+    st.switch_page("pages/Kiosk.py")
+
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("🧵 Admin Portal")
+    st.markdown("""
+    <div style="padding:16px 16px 12px;border-bottom:1px solid #dadce0;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:32px;height:32px;background:#e8f0fe;
+                        border-radius:8px;display:flex;align-items:center;justify-content:center;
+                        font-size:16px;flex-shrink:0;">🧵</div>
+            <div>
+                <div style="color:#202124;font-family:'Roboto',sans-serif;font-weight:500;font-size:0.9rem;line-height:1.2;">Notion to Sew</div>
+                <div style="color:#5f6368;font-family:'Roboto',sans-serif;font-size:0.7rem;font-weight:400;letter-spacing:0.04em;">Admin Portal</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     menu = st.radio("Navigate", ["📊 Dashboard", "📦 Inventory", "🛒 Checkout", "👥 Customers", "📝 Reports", "⚙️ Settings"])
-    
+
     st.divider()
     if st.button("🔄 Refresh Database"):
         auto_refresh()
@@ -49,7 +352,7 @@ with st.sidebar:
 # 1. DASHBOARD
 # ==========================================
 if menu == "📊 Dashboard":
-    st.title("Dashboard")
+    page_header("📊", "Dashboard", "Sales overview and recent activity")
     col_d1, col_d2 = st.columns(2)
     today = date.today()
     start_of_month = date(today.year, today.month, 1)
@@ -107,7 +410,7 @@ if menu == "📊 Dashboard":
 # 2. INVENTORY
 # ==========================================
 elif menu == "📦 Inventory":
-    st.title("Inventory Manager")
+    page_header("📦", "Inventory", "Manage products, stock levels, and costs")
     
     # Refresh data ensuring 'Cost' column exists in DataFrame
     if 'Cost' not in st.session_state['data']['inventory'].columns:
@@ -223,7 +526,7 @@ elif menu == "📦 Inventory":
 # 3. CHECKOUT
 # ==========================================
 elif menu == "🛒 Checkout":
-    st.title("Point of Sale")
+    page_header("🛒", "Point of Sale", "Admin checkout with invoice + wholesale support")
 
     # --- SUCCESS STATE ---
     if st.session_state.get('checkout_complete'):
@@ -372,10 +675,7 @@ elif menu == "🛒 Checkout":
                                     pay_method, is_wholesale, status, credit_used=credit_applied
                                 )
                                 # Generate PDF
-                                if 'settings' in st.session_state['data']:
-                                    s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
-                                    address = s_dict.get("Address", "Modesto, CA")
-                                else: address = "Modesto, CA"
+                                address = db.get_settings_dict().get("Address", "Modesto, CA")
                                 
                                 pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied)
                                 
@@ -393,7 +693,7 @@ elif menu == "🛒 Checkout":
 # 4. CUSTOMERS (Card View & CRM)
 # ==========================================
 elif menu == "👥 Customers":
-    st.title("Customer Management")
+    page_header("👥", "Customers", "CRM — profiles, purchase history, and store credit")
     
     # Initialize Session State for Navigation
     if 'active_cust_id' not in st.session_state:
@@ -608,25 +908,9 @@ elif menu == "👥 Customers":
                                     st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
                                     st.rerun()
                                     
-                                # 1. Generate PDF Data
+                                # Build PDF from stored transaction data
                                 t_id = str(t_row['TransactionID'])
-                                df_items['TransactionID'] = df_items['TransactionID'].astype(str)
-                                inv_items = df_items[df_items['TransactionID'] == t_id]
-                                cart = []
-                                for _, item in inv_items.iterrows():
-                                    try: q=int(item['QtySold']); p=float(item['Price'])
-                                    except: q=1; p=0.0
-                                    cart.append({"sku": str(item.get('SKU','')), "name": item['Name'], "qty": q, "price": p})
-                                
-                                try: tax = float(t_row['TaxAmount'] if t_row['TaxAmount'] != '' else 0)
-                                except: tax = 0.0
-                                
-                                if 'settings' in st.session_state['data']:
-                                    s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
-                                    addr = s_dict.get("Address", "Modesto, CA")
-                                else: addr = "Modesto, CA"
-                                
-                                pdf_bytes = db.create_pdf(t_id, row['Name'], addr, cart, 0, tax, amt, str(t_row.get('DueDate','')))
+                                pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
                                 
                                 # 2. Download/Print Button (Top of Viewer)
                                 st.download_button(
@@ -646,7 +930,7 @@ elif menu == "👥 Customers":
 # 5. REPORTS
 # ==========================================
 elif menu == "📝 Reports":
-    st.title("Financial Reports")
+    page_header("📝", "Financial Reports", "Income statement, tax liability, top sellers, and A/R")
     tab1, tab2, tab3, tab4 = st.tabs(["💰 Income Statement", "🏛️ Sales Tax", "📈 Top Sellers", "⏳ Unpaid"])
     
 # --- TAB 1: INCOME STATEMENT (New!) ---
@@ -734,8 +1018,6 @@ elif menu == "📝 Reports":
             c_b.metric("COGS", f"${total_cogs:,.2f}")
             c_c.metric("Net Profit", f"${net_profit:,.2f}", delta_color="normal")
             
-            # ... pdf_data = db.generate_income_statement_pdf(...)
-            
             # Preview
             st.divider()
             # No base64 encoding needed
@@ -747,21 +1029,30 @@ elif menu == "📝 Reports":
                 mime="application/pdf", type="primary", use_container_width=True
             )
             
-            # G. Expense Logger
-            # 1. Get Categories from Settings
+
+        # --- LOG AN EXPENSE (always visible, outside Generate button) ---
+        st.divider()
+        with st.expander("➕ Log an Expense"):
             if 'settings' in st.session_state['data']:
                 s_df = st.session_state['data']['settings']
                 s_dict = dict(zip(s_df['Key'], s_df['Value']))
-                # Fallback if key doesn't exist yet
                 raw_cats = s_dict.get("ExpenseCategories", "Fabric, Notions, Rent, Marketing, Shipping, Wages, Other")
-                # Convert string "A, B, C" -> List ["A", "B", "C"]
                 cat_options = [x.strip() for x in raw_cats.split(",") if x.strip()]
             else:
                 cat_options = ["Fabric", "Notions", "Rent", "Marketing", "Other"]
 
-            # 2. Use the dynamic list
-            ex_cat = c2.selectbox("Category", cat_options)
-            
+            with st.form("log_expense_form"):
+                ex_c1, ex_c2 = st.columns(2)
+                ex_date = ex_c1.date_input("Date", value=date.today(), key="ex_date")
+                ex_cat = ex_c2.selectbox("Category", cat_options, key="ex_cat")
+                ex_c3, ex_c4 = st.columns(2)
+                ex_amount = ex_c3.number_input("Amount ($)", 0.01, 100000.0, 10.0, key="ex_amount")
+                ex_desc = ex_c4.text_input("Description", placeholder="e.g. Fabric from JoAnn", key="ex_desc")
+                if st.form_submit_button("💾 Save Expense", type="primary"):
+                    db.add_expense(ex_date, ex_cat, ex_amount, ex_desc)
+                    st.success(f"Logged ${ex_amount:.2f} under {ex_cat}.")
+                    auto_refresh()
+
     with tab2:
         st.header("Sales Tax Liability")
         c1, c2 = st.columns(2)
@@ -900,25 +1191,9 @@ elif menu == "📝 Reports":
                             st.session_state[f"view_inv_{row['TransactionID']}"] = False
                             st.rerun()
 
-                        # 1. Generate PDF Data
+                        # Build PDF from stored transaction data
                         t_id = str(row['TransactionID'])
-                        df_items['TransactionID'] = df_items['TransactionID'].astype(str)
-                        inv_items = df_items[df_items['TransactionID'] == t_id]
-                        cart_rebuild = []
-                        for _, item in inv_items.iterrows():
-                            try: q = int(item['QtySold']); p = float(item['Price'])
-                            except: q=1; p=0.0
-                            cart_rebuild.append({"sku": str(item.get('SKU','')), "name": item['Name'], "qty": q, "price": p})
-                        
-                        try: tax_val = float(row['TaxAmount'] if row['TaxAmount'] != '' else 0)
-                        except: tax_val = 0.0
-                        
-                        if 'settings' in st.session_state['data']:
-                            s_dict = dict(zip(st.session_state['data']['settings']['Key'], st.session_state['data']['settings']['Value']))
-                            addr = s_dict.get("Address", "Modesto, CA")
-                        else: addr = "Modesto, CA"
-                        
-                        pdf_bytes = db.create_pdf(t_id, cust_name, addr, cart_rebuild, 0, tax_val, float(row['TotalAmount']), str(row.get('DueDate', '')))
+                        pdf_bytes = _build_invoice_pdf(t_id, cust_name)
                         
                         # 2. Download Button
                         st.download_button(
@@ -938,7 +1213,7 @@ elif menu == "📝 Reports":
 # 6. SETTINGS
 # ==========================================
 elif menu == "⚙️ Settings":
-    st.title("Settings")
+    page_header("⚙️", "Settings", "Company info, tax rate, invoice numbering")
     
     # Load Settings
     if 'settings' in st.session_state['data']:
