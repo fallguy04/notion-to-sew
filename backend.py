@@ -37,13 +37,9 @@ def get_data():
             "settings": pd.DataFrame(sh.worksheet("Settings").get_all_records()),
             "expenses": expenses_df
         }
-    except gspread.exceptions.APIError as e:
-        if "429" in str(e):
-            st.error("⏳ Google says we are moving too fast! Please wait 1 minute before refreshing.")
-            st.stop()
-        else:
-            st.error(f"Database Error: {e}")
-            return {}
+    except Exception as e:
+        st.error(f"🚨 Google Sheets Error: {e}")
+        return {}
 
 # --- HELPER: Force Cache Clear ---
 def force_refresh():

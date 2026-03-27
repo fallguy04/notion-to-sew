@@ -318,14 +318,12 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
     return db.create_pdf(transaction_id, customer_name, addr, cart, 0, tax, total, due)
 
 # --- INIT STATE ---
-if 'data' not in st.session_state:
+if 'data' not in st.session_state or not st.session_state['data']:
     with st.spinner("Connecting to Headquarters..."):
         st.session_state['data'] = db.get_data()
-if 'cart' not in st.session_state: st.session_state['cart'] = []
-
-# --- DEFAULT: REDIRECT TO KIOSK unless mom has authenticated ---
-if not st.session_state.get('admin_authenticated'):
-    st.switch_page("pages/Kiosk.py")
+        if not st.session_state['data']:
+            st.warning("⚠️ Could not load data from Google Sheets. Check your connection or API limits.")
+            st.stop() # This halts the app so it doesn't crash on line 420!
 
 # --- SIDEBAR ---
 with st.sidebar:
