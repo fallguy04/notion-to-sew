@@ -6,15 +6,49 @@ import streamlit.components.v1 as components
 # --- CONFIG (iPad Optimized - Refined) ---
 st.set_page_config(page_title="Kiosk | Notion to Sew", layout="wide", initial_sidebar_state="collapsed")
 
-# --- KEEP APP AWAKE: pings Streamlit health endpoint every 9 min so the app never sleeps ---
-components.html(
-    """<script>
-    setInterval(function() {
-        fetch('/_stcore/health').catch(function(){});
-    }, 540000);
-    </script>""",
-    height=0
-)
+# --- KEEP APP AWAKE + INJECT ADMIN FAB INTO PARENT DOM ---
+components.html("""
+<script>
+// Keep alive
+setInterval(function() { fetch('/_stcore/health').catch(function(){}); }, 540000);
+
+// Admin FAB — injected into parent document so position:fixed works outside the iframe
+(function injectFab() {
+    var p = window.parent.document;
+    if (p.getElementById('admin-fab')) return;
+
+    var s = p.createElement('style');
+    s.id = 'admin-fab-style';
+    s.textContent = [
+        '#admin-fab {',
+        '  position:fixed; top:16px; right:16px;',
+        '  width:42px; height:42px; border-radius:50%;',
+        '  background:rgba(255,255,255,0.5);',
+        '  border:1px solid rgba(218,220,224,0.6);',
+        '  cursor:pointer; display:flex; align-items:center; justify-content:center;',
+        '  font-size:16px; z-index:99999;',
+        '  box-shadow:0 1px 4px rgba(0,0,0,0.08);',
+        '  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);',
+        '  opacity:0.22; transition:opacity .25s,box-shadow .25s,background .25s;',
+        '  padding:0; outline:none; line-height:1;',
+        '}',
+        '#admin-fab:hover { opacity:0.85; box-shadow:0 2px 10px rgba(0,0,0,0.18); background:rgba(255,255,255,0.95); }'
+    ].join('');
+    p.head.appendChild(s);
+
+    var btn = p.createElement('button');
+    btn.id = 'admin-fab';
+    btn.title = 'Admin Login';
+    btn.innerHTML = '🔐';
+    btn.addEventListener('click', function() {
+        var u = new URL(window.parent.location.href);
+        u.searchParams.set('admin_open', '1');
+        window.parent.location.href = u.toString();
+    });
+    p.body.appendChild(btn);
+})();
+</script>
+""", height=0)
 
 # --- CUSTOM CSS (ChromeOS / Google 2026 Design) ---
 st.markdown("""
@@ -315,37 +349,6 @@ hr { border-color: #dadce0 !important; }
 /* ── FORM ── */
 div[data-testid="stForm"] { border: none !important; background: transparent !important; }
 
-/* ── ADMIN FAB ── */
-.admin-fab {
-    position: fixed;
-    bottom: 22px;
-    right: 22px;
-    width: 46px;
-    height: 46px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.55);
-    border: 1px solid rgba(218,220,224,0.7);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 17px;
-    z-index: 99999;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    transition: opacity 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
-    opacity: 0.22;
-    color: #5f6368;
-    outline: none;
-    line-height: 1;
-    padding: 0;
-}
-.admin-fab:hover {
-    opacity: 0.82;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.18);
-    background: rgba(255,255,255,0.95);
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -401,14 +404,6 @@ with st.sidebar:
         else:
             st.error("Incorrect PIN")
 
-# --- ADMIN FAB BUTTON (fixed, bottom-right, subtle) ---
-st.markdown("""
-<button class="admin-fab" title="Admin Login"
-    onclick="const u=new URL(window.location);u.searchParams.set('admin_open','1');window.location=u.toString();">
-    🔐
-</button>
-""", unsafe_allow_html=True)
-
 # ==========================================
 # PAGE 1: THE SHOP
 # ==========================================
@@ -420,10 +415,7 @@ if st.session_state['page'] == 'shop':
     with c1:
         st.markdown("""
         <div class="kiosk-header">
-            <div>
-                <div class="kiosk-header-title">🧵 Notion to Sew</div>
-                <div class="kiosk-header-sub">Buttons · Notions · Sewing Supplies</div>
-            </div>
+            <div class="kiosk-header-title">Type any item name or number below</div>
         </div>""", unsafe_allow_html=True)
     with c2:
         st.write("")
@@ -431,13 +423,6 @@ if st.session_state['page'] == 'shop':
         if st.button(f"🛒 Cart ({cart_count})", type="primary", use_container_width=True):
             go_checkout()
             st.rerun()
-
-    # --- SEARCH HERO ---
-    st.markdown("""
-    <div class="search-hero">
-        <div class="search-hero-title">Type any item name or number below</div>
-    </div>
-    """, unsafe_allow_html=True)
 
     df = st.session_state['data']['inventory'].copy()
     df['lookup'] = df['SKU'].astype(str) + " — " + df['Name']
