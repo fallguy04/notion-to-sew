@@ -15,8 +15,8 @@ The kiosk now sends PDF receipts by email, but it needs real credentials to work
 Open `.streamlit/secrets.toml` and fill in the placeholders at the bottom:
 ```toml
 [email]
-sender = "yourmom@gmail.com"       # The Gmail address sending the receipts
-app_password = "abcd efgh ijkl mnop"  # The App Password from Step 1
+sender = "notiontosew217@gmail.com"       # The Gmail address sending the receipts
+app_password = "iysa dmqg itzb yzkp"  # The App Password from Step 1
 ```
 
 ### Step 3: Update Streamlit Cloud secrets

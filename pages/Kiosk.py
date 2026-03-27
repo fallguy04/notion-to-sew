@@ -314,6 +314,38 @@ hr { border-color: #dadce0 !important; }
 
 /* ── FORM ── */
 div[data-testid="stForm"] { border: none !important; background: transparent !important; }
+
+/* ── ADMIN FAB ── */
+.admin-fab {
+    position: fixed;
+    bottom: 22px;
+    right: 22px;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.55);
+    border: 1px solid rgba(218,220,224,0.7);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    z-index: 99999;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: opacity 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+    opacity: 0.22;
+    color: #5f6368;
+    outline: none;
+    line-height: 1;
+    padding: 0;
+}
+.admin-fab:hover {
+    opacity: 0.82;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+    background: rgba(255,255,255,0.95);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -322,6 +354,35 @@ if 'data' not in st.session_state:
     st.session_state['data'] = db.get_data()
 if 'kiosk_cart' not in st.session_state: st.session_state['kiosk_cart'] = []
 if 'page' not in st.session_state: st.session_state['page'] = 'shop'
+if 'show_admin_login' not in st.session_state: st.session_state['show_admin_login'] = False
+
+# --- ADMIN FAB: detect click via query param ---
+if st.query_params.get("admin_open") == "1":
+    st.session_state['show_admin_login'] = True
+    st.query_params.clear()
+
+# --- ADMIN LOGIN DIALOG ---
+@st.dialog("Admin Sign In")
+def admin_login_dialog():
+    st.caption("Enter your PIN to open the Admin portal.")
+    pin = st.text_input("PIN", type="password", placeholder="Enter PIN", label_visibility="collapsed")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Unlock →", type="primary", use_container_width=True):
+            correct_pin = str(st.secrets.get("admin", {}).get("pin", "1234"))
+            if pin == correct_pin:
+                st.session_state['admin_authenticated'] = True
+                st.session_state['show_admin_login'] = False
+                st.switch_page("Home.py")
+            else:
+                st.error("Incorrect PIN")
+    with c2:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state['show_admin_login'] = False
+            st.rerun()
+
+if st.session_state['show_admin_login']:
+    admin_login_dialog()
 
 # --- HELPERS ---
 def go_home(): st.session_state['page'] = 'shop'
@@ -339,6 +400,14 @@ with st.sidebar:
             st.switch_page("Home.py")
         else:
             st.error("Incorrect PIN")
+
+# --- ADMIN FAB BUTTON (fixed, bottom-right, subtle) ---
+st.markdown("""
+<button class="admin-fab" title="Admin Login"
+    onclick="const u=new URL(window.location);u.searchParams.set('admin_open','1');window.location=u.toString();">
+    🔐
+</button>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # PAGE 1: THE SHOP
@@ -366,8 +435,7 @@ if st.session_state['page'] == 'shop':
     # --- SEARCH HERO ---
     st.markdown("""
     <div class="search-hero">
-        <div class="search-hero-title">What can we help you find?</div>
-        <div class="search-hero-sub">Type any item name or number below</div>
+        <div class="search-hero-title">Type any item name or number below</div>
     </div>
     """, unsafe_allow_html=True)
 
