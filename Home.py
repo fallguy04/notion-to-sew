@@ -380,9 +380,75 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
         due = str(r.get('DueDate', ''))
     return db.create_pdf(transaction_id, customer_name, addr, cart, 0, tax, total, due)
 
+# --- HELPER: Edit Inventory Editor (shared by tab view + fullscreen) ---
+def _render_inv_editor(height=600):
+    full_inv = st.session_state['data']['inventory'].copy()
+
+    if 'Active' not in full_inv.columns:
+        full_inv['Active'] = True
+    full_inv['Active'] = full_inv['Active'].apply(
+        lambda x: str(x).strip().lower() not in ['false', '0', 'no', '']
+    )
+
+    c_s, c_sort, c_ord, c_show = st.columns([2, 2, 1, 1.5])
+    search     = c_s.text_input("🔍 Search", placeholder="Filter items...", key="inv_search")
+    sort_col   = c_sort.selectbox("Sort By", ["Name", "SKU", "Price", "WholesalePrice", "StockQty", "Cost"], key="inv_sort_col")
+    sort_asc   = c_ord.radio("Dir", ["↑", "↓"], horizontal=True, key="inv_sort_dir") == "↑"
+    show_inact = c_show.checkbox("Show Inactive Items", value=False, key="inv_show_inactive")
+
+    view_df = full_inv.copy()
+    if not show_inact:
+        view_df = view_df[view_df['Active'] == True]
+    if search:
+        mask = view_df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)
+        view_df = view_df[mask]
+
+    if sort_col in view_df.columns:
+        try:
+            view_df = view_df.copy()
+            if sort_col in ['Price', 'WholesalePrice', 'StockQty', 'Cost']:
+                view_df[sort_col] = pd.to_numeric(view_df[sort_col], errors='coerce')
+            else:
+                # SKU / Name: cast to str so mixed-type columns don't crash sort
+                view_df[sort_col] = view_df[sort_col].astype(str)
+            view_df = view_df.sort_values(by=sort_col, ascending=sort_asc)
+        except Exception:
+            pass
+
+    csv_export = view_df.to_csv(index=False).encode('utf-8')
+    st.download_button("🖨️ Export / Print This List (CSV)", data=csv_export,
+                       file_name="inventory_export.csv", mime="text/csv", key="inv_export")
+
+    with st.form("inv_editor"):
+        edited_df = st.data_editor(
+            view_df,
+            use_container_width=True,
+            height=height,
+            num_rows="dynamic",
+            column_config={
+                "SKU":            st.column_config.TextColumn("SKU"),
+                "Active":         st.column_config.CheckboxColumn("Active", help="Uncheck to hide from kiosk and searches"),
+                "Price":          st.column_config.NumberColumn(format="$%.2f"),
+                "WholesalePrice": st.column_config.NumberColumn(format="$%.2f"),
+                "Cost":           st.column_config.NumberColumn(format="$%.2f"),
+            }
+        )
+        if st.form_submit_button("💾 Save Changes"):
+            full_inv.update(edited_df)
+            deleted_idx = view_df.index.difference(edited_df.index)
+            full_inv = full_inv.drop(index=deleted_idx, errors='ignore')
+            new_idx = edited_df.index.difference(view_df.index)
+            if not new_idx.empty:
+                full_inv = pd.concat([full_inv, edited_df.loc[new_idx]], ignore_index=True)
+            db.update_inventory_batch(full_inv.reset_index(drop=True))
+            st.success("Database Updated Successfully!")
+            auto_refresh()
+
 # --- INIT STATE ---
 if 'cart' not in st.session_state:
     st.session_state['cart'] = []
+if 'inv_fullscreen' not in st.session_state:
+    st.session_state['inv_fullscreen'] = False
 if 'data' not in st.session_state or not st.session_state['data']:
     with st.spinner("Connecting to Headquarters..."):
         st.session_state['data'] = db.get_data()
@@ -410,6 +476,22 @@ with st.sidebar:
     st.divider()
     if st.button("🔄 Refresh Database"):
         auto_refresh()
+
+# ==========================================
+# FULLSCREEN: EDIT DATABASE
+# ==========================================
+if st.session_state.get('inv_fullscreen'):
+    st.markdown("""<style>
+    section[data-testid="stSidebar"] { display: none !important; }
+    .block-container { max-width: 100% !important; padding: 0.75rem 1.5rem !important; }
+    </style>""", unsafe_allow_html=True)
+    _hdr, _exit = st.columns([6, 1])
+    _hdr.subheader("📋 Edit Inventory Database")
+    if _exit.button("✕ Exit Full Screen", use_container_width=True, type="primary"):
+        st.session_state['inv_fullscreen'] = False
+        st.rerun()
+    _render_inv_editor(height=900)
+    st.stop()
 
 # ==========================================
 # 1. DASHBOARD
@@ -537,70 +619,11 @@ elif menu == "📦 Inventory":
 
     # --- TAB 2: EDIT DATABASE ---
     with tab2:
-        full_inv = st.session_state['data']['inventory'].copy()
-
-        # Ensure Active column exists (default True for existing items)
-        if 'Active' not in full_inv.columns:
-            full_inv['Active'] = True
-        full_inv['Active'] = full_inv['Active'].apply(
-            lambda x: str(x).strip().lower() not in ['false', '0', 'no', '']
-        )
-
-        # ── Controls ──
-        c_s, c_sort, c_ord, c_show = st.columns([2, 2, 1, 1.5])
-        search = c_s.text_input("🔍 Search", placeholder="Filter items...")
-        sort_col = c_sort.selectbox("Sort By", ["Name", "SKU", "Price", "WholesalePrice", "StockQty", "Cost"])
-        sort_asc = c_ord.radio("Dir", ["↑", "↓"], horizontal=True) == "↑"
-        show_inactive = c_show.checkbox("Show Inactive Items", value=False)
-
-        # ── Build view ──
-        view_df = full_inv.copy()
-        if not show_inactive:
-            view_df = view_df[view_df['Active'] == True]
-        if search:
-            mask = view_df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)
-            view_df = view_df[mask]
-        if sort_col in view_df.columns:
-            try:
-                if sort_col in ['Price', 'WholesalePrice', 'StockQty', 'Cost']:
-                    view_df = view_df.copy()
-                    view_df[sort_col] = pd.to_numeric(view_df[sort_col], errors='coerce')
-                view_df = view_df.sort_values(by=sort_col, ascending=sort_asc)
-            except Exception:
-                pass
-
-        # ── Export the filtered/sorted view ──
-        csv_export = view_df.to_csv(index=False).encode('utf-8')
-        st.download_button("🖨️ Export / Print This List (CSV)", data=csv_export,
-                           file_name="inventory_export.csv", mime="text/csv")
-
-        with st.form("inv_editor"):
-            edited_df = st.data_editor(
-                view_df,
-                use_container_width=True,
-                height=600,
-                num_rows="dynamic",
-                column_config={
-                    "SKU": st.column_config.TextColumn("SKU"),
-                    "Active": st.column_config.CheckboxColumn("Active", help="Uncheck to hide from kiosk and searches"),
-                    "Price": st.column_config.NumberColumn(format="$%.2f"),
-                    "WholesalePrice": st.column_config.NumberColumn(format="$%.2f"),
-                    "Cost": st.column_config.NumberColumn(format="$%.2f"),
-                }
-            )
-            if st.form_submit_button("💾 Save Changes"):
-                # Merge edits back into the full inventory (preserves hidden inactive rows)
-                full_inv.update(edited_df)
-                # Remove rows deleted from the visible view
-                deleted_idx = view_df.index.difference(edited_df.index)
-                full_inv = full_inv.drop(index=deleted_idx, errors='ignore')
-                # Append newly added rows
-                new_idx = edited_df.index.difference(view_df.index)
-                if not new_idx.empty:
-                    full_inv = pd.concat([full_inv, edited_df.loc[new_idx]], ignore_index=True)
-                db.update_inventory_batch(full_inv.reset_index(drop=True))
-                st.success("Database Updated Successfully!")
-                auto_refresh()
+        _fs_col, _ = st.columns([1, 5])
+        if _fs_col.button("⛶ Full Screen", key="inv_fs_open"):
+            st.session_state['inv_fullscreen'] = True
+            st.rerun()
+        _render_inv_editor(height=600)
 
     with tab3:
         st.subheader("Bulk Import from CSV")
