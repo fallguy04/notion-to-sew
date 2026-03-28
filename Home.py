@@ -25,7 +25,9 @@ html, body, p, label, input, textarea, select {
 }
 .stApp { background: #f8f9fa !important; }
 #MainMenu, footer { visibility: hidden; }
-header[data-testid="stHeader"] { display: none !important; }
+/* Hide Streamlit's deploy/share toolbar but keep the sidebar toggle button intact */
+header[data-testid="stHeader"] { background: transparent !important; }
+[data-testid="stToolbar"] { display: none !important; }
 
 /* ── SIDEBAR — Light / ChromeOS style ── */
 section[data-testid="stSidebar"] {
@@ -335,48 +337,6 @@ st.markdown("""
   <span>Open Inventory Database</span>
 </a>
 
-<style>
-/* ── Edit DB FAB (top-left, hidden by sidebar when sidebar is open) ── */
-#inv-db-fab {
-    position: fixed !important;
-    top: 14px !important;
-    left: 10px !important;
-    z-index: 99 !important;          /* sidebar z-index is ~99990 — sidebar covers this */
-    display: flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-    background: #ffffff !important;
-    border: 1px solid #dadce0 !important;
-    border-radius: 24px !important;
-    padding: 6px 14px 6px 10px !important;
-    box-shadow: 0 1px 3px rgba(60,64,67,0.2), 0 2px 6px rgba(60,64,67,0.1) !important;
-    text-decoration: none !important;
-    transition: box-shadow 0.15s, background 0.15s !important;
-    cursor: pointer !important;
-}
-#inv-db-fab:hover {
-    background: #f1f3f4 !important;
-    box-shadow: 0 2px 6px rgba(60,64,67,0.25), 0 4px 12px rgba(60,64,67,0.12) !important;
-    text-decoration: none !important;
-}
-#inv-db-fab span {
-    font-family: 'Roboto', sans-serif !important;
-    font-size: 0.8rem !important;
-    font-weight: 500 !important;
-    color: #3c4043 !important;
-    white-space: nowrap !important;
-}
-</style>
-<a href="?fs=1" id="inv-db-fab" title="Open Edit Database in full screen">
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none"
-       stroke="#1a73e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2"/>
-    <line x1="3" y1="9" x2="21" y2="9"/>
-    <line x1="3" y1="15" x2="21" y2="15"/>
-    <line x1="9" y1="9" x2="9" y2="21"/>
-  </svg>
-  <span>Edit Inventory DB</span>
-</a>
 """, unsafe_allow_html=True)
 
 # --- HELPER: AUTO REFRESH ---
@@ -490,14 +450,6 @@ def _render_inv_editor(height=600):
 # --- INIT STATE ---
 if 'cart' not in st.session_state:
     st.session_state['cart'] = []
-if 'inv_fullscreen' not in st.session_state:
-    st.session_state['inv_fullscreen'] = False
-
-# Handle FAB click — ?fs=1 query param triggers fullscreen editor
-if st.query_params.get('fs') == '1':
-    st.session_state['inv_fullscreen'] = True
-    st.query_params.clear()
-    st.rerun()
 if 'data' not in st.session_state or not st.session_state['data']:
     with st.spinner("Connecting to Headquarters..."):
         st.session_state['data'] = db.get_data()
@@ -525,32 +477,6 @@ with st.sidebar:
     st.divider()
     if st.button("🔄 Refresh Database"):
         auto_refresh()
-
-# ==========================================
-# FULLSCREEN: EDIT DATABASE
-# ==========================================
-if st.session_state.get('inv_fullscreen'):
-    st.markdown("""<style>
-    section[data-testid="stSidebar"] { display: none !important; }
-    .block-container { max-width: 100% !important; padding: 0.5rem 1.5rem !important; }
-    #inv-db-fab { display: none !important; }
-    </style>""", unsafe_allow_html=True)
-    st.markdown("""
-    <div style="display:flex;align-items:center;justify-content:space-between;
-                background:#1a73e8;color:#fff;padding:10px 20px;border-radius:8px;margin-bottom:12px;">
-        <span style="font-family:'Roboto',sans-serif;font-size:1rem;font-weight:500;">
-            📋 Edit Inventory Database &nbsp;—&nbsp; Full Screen Mode
-        </span>
-        <span style="font-family:'Roboto',sans-serif;font-size:0.8rem;opacity:0.85;">
-            Use the button below to exit ↓
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("✕ Exit Full Screen — Return to Normal View", type="primary", use_container_width=True):
-        st.session_state['inv_fullscreen'] = False
-        st.rerun()
-    _render_inv_editor(height=900)
-    st.stop()
 
 # ==========================================
 # 1. DASHBOARD
