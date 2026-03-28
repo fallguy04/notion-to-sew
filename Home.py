@@ -25,9 +25,6 @@ html, body, p, label, input, textarea, select {
 }
 .stApp { background: #f8f9fa !important; }
 #MainMenu, footer { visibility: hidden; }
-/* Hide Streamlit's deploy/share toolbar but keep the sidebar toggle button intact */
-header[data-testid="stHeader"] { background: transparent !important; }
-[data-testid="stToolbar"] { display: none !important; }
 
 /* ── SIDEBAR — Light / ChromeOS style ── */
 section[data-testid="stSidebar"] {
@@ -297,7 +294,7 @@ st.markdown("""
 <style>
 #sheets-fab {
     position: fixed !important;
-    top: 14px !important;
+    top: 60px !important;
     right: 20px !important;
     z-index: 1000000 !important;
     display: flex !important;
