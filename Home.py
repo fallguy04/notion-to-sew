@@ -291,11 +291,40 @@ section[data-testid="stSidebar"] .stRadio > label {
 
 # --- GOOGLE SHEETS FAB (Admin mode only) ---
 st.markdown("""
+<style>
+#sheets-fab {
+    position: fixed !important;
+    top: 65px !important;
+    right: 20px !important;
+    z-index: 1000000 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    background: #ffffff !important;
+    border: 1px solid #dadce0 !important;
+    border-radius: 24px !important;
+    padding: 6px 14px 6px 10px !important;
+    box-shadow: 0 1px 3px rgba(60,64,67,0.2), 0 2px 6px rgba(60,64,67,0.1) !important;
+    text-decoration: none !important;
+    transition: box-shadow 0.15s, background 0.15s !important;
+    cursor: pointer !important;
+}
+#sheets-fab:hover {
+    background: #f1f3f4 !important;
+    box-shadow: 0 2px 6px rgba(60,64,67,0.25), 0 4px 12px rgba(60,64,67,0.12) !important;
+    text-decoration: none !important;
+}
+#sheets-fab span {
+    font-family: 'Roboto', sans-serif !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    color: #3c4043 !important;
+    white-space: nowrap !important;
+}
+</style>
 <a href="https://docs.google.com/spreadsheets/d/13hdnnzU3pZpypqHlZasi9KR22-uDF7erpKKdykhJZtI/edit?gid=0#gid=0"
    target="_blank" title="Open Google Sheet" id="sheets-fab">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="26" height="26">
-    <rect width="64" height="64" rx="6" fill="#ffffff" opacity="0"/>
-    <!-- Google Sheets icon -->
     <path d="M38 4H16a4 4 0 0 0-4 4v48a4 4 0 0 0 4 4h32a4 4 0 0 0 4-4V18L38 4z" fill="#23A566"/>
     <path d="M38 4v14h14L38 4z" fill="#16834F"/>
     <rect x="20" y="30" width="24" height="3" rx="1" fill="#ffffff" opacity="0.9"/>
@@ -304,36 +333,6 @@ st.markdown("""
   </svg>
   <span>Open Sheet</span>
 </a>
-<style>
-#sheets-fab {
-    position: fixed;
-    top: 14px;
-    right: 20px;
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    background: #ffffff;
-    border: 1px solid #dadce0;
-    border-radius: 24px;
-    padding: 6px 14px 6px 10px;
-    box-shadow: 0 1px 3px rgba(60,64,67,0.2), 0 2px 6px rgba(60,64,67,0.1);
-    text-decoration: none !important;
-    transition: box-shadow 0.15s, background 0.15s;
-}
-#sheets-fab:hover {
-    background: #f1f3f4;
-    box-shadow: 0 2px 6px rgba(60,64,67,0.25), 0 4px 12px rgba(60,64,67,0.12);
-    text-decoration: none !important;
-}
-#sheets-fab span {
-    font-family: 'Roboto', sans-serif;
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: #3c4043;
-    white-space: nowrap;
-}
-</style>
 """, unsafe_allow_html=True)
 
 # --- HELPER: AUTO REFRESH ---
@@ -381,6 +380,8 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
     return db.create_pdf(transaction_id, customer_name, addr, cart, 0, tax, total, due)
 
 # --- INIT STATE ---
+if 'cart' not in st.session_state:
+    st.session_state['cart'] = []
 if 'data' not in st.session_state or not st.session_state['data']:
     with st.spinner("Connecting to Headquarters..."):
         st.session_state['data'] = db.get_data()
