@@ -149,13 +149,13 @@ if st.session_state['page'] == 'shop':
                 st.markdown(f"## ${row['Price']:.2f}")
 
             with cols[1]:
-                q1, q2, q3 = st.columns([1, 2, 1])
-                if q1.button("−", key="main_sub"):
+                q1, q2, q3 = st.columns([1, 2, 1], vertical_alignment="center")
+                if q1.button("−", key="main_sub", use_container_width=True):
                     if st.session_state['main_qty'] > 1:
                         st.session_state['main_qty'] -= 1
                         st.rerun()
-                q2.metric(" ", st.session_state['main_qty'])
-                if q3.button("＋", key="main_add"):
+                q2.markdown(f"<div style='text-align:center;font-size:2rem;font-weight:500'>{st.session_state['main_qty']}</div>", unsafe_allow_html=True)
+                if q3.button("＋", key="main_add", use_container_width=True):
                     st.session_state['main_qty'] += 1
                     st.rerun()
 

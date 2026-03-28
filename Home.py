@@ -189,7 +189,7 @@ if st.session_state.get('inv_fullscreen'):
     .block-container { max-width: 100% !important; padding: 0.5rem 1.5rem !important; }
     #sheets-fab { display: none !important; }
     </style>""", unsafe_allow_html=True)
-    _hdr, _exit = st.columns([6, 1])
+    _hdr, _exit = st.columns([4, 1])
     _hdr.subheader("📋 Edit Inventory Database — Full Screen")
     if _exit.button("✕ Exit Full Screen", use_container_width=True, type="primary"):
         st.session_state['inv_fullscreen'] = False
