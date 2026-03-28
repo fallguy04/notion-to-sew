@@ -128,8 +128,9 @@ def update_inventory_batch(df_changes):
     current_row_count = len(ws.get_all_values())
     new_row_count = len(payload)
     if current_row_count > new_row_count:
-        # Clear rows from (new_last_row + 1) to (old_last_row)
-        ws.batch_clear([f"A{new_row_count + 1}:F{current_row_count}"])
+        # Clear rows from (new_last_row + 1) to (old_last_row), spanning all columns
+        last_col = chr(ord('A') + len(headers) - 1)
+        ws.batch_clear([f"A{new_row_count + 1}:{last_col}{current_row_count}"])
 
     return force_refresh()
 

@@ -270,6 +270,22 @@ div[data-testid="stToast"] { border-radius: 8px !important; }
 }
 .nts-page-header h1 { margin: 0 !important; padding: 0 !important; border: none !important; }
 .nts-page-header p { margin: 2px 0 0 !important; font-size: 0.8rem !important; color: #5f6368 !important; }
+
+/* ── FIX: sidebar "Navigate" label renders as a hover pill because a later rule
+   re-applies display:block. Placing display:none last in the sheet wins. ── */
+section[data-testid="stSidebar"] .stRadio > label {
+    display: none !important;
+    pointer-events: none !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* ── Larger scrollbars in data grid ── */
+.dvn-scroller::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+.dvn-scroller::-webkit-scrollbar-thumb { background: #9aa0a6 !important; border-radius: 5px !important; }
+.dvn-scroller::-webkit-scrollbar-track { background: #f1f3f4 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -472,28 +488,68 @@ elif menu == "📦 Inventory":
 
     # --- TAB 2: EDIT DATABASE ---
     with tab2:
-        df_inv = st.session_state['data']['inventory']
-        search = st.text_input("🔍 Search Inventory", placeholder="Type to filter...")
-        
+        full_inv = st.session_state['data']['inventory'].copy()
+
+        # Ensure Active column exists (default True for existing items)
+        if 'Active' not in full_inv.columns:
+            full_inv['Active'] = True
+        full_inv['Active'] = full_inv['Active'].apply(
+            lambda x: str(x).strip().lower() not in ['false', '0', 'no', '']
+        )
+
+        # ── Controls ──
+        c_s, c_sort, c_ord, c_show = st.columns([2, 2, 1, 1.5])
+        search = c_s.text_input("🔍 Search", placeholder="Filter items...")
+        sort_col = c_sort.selectbox("Sort By", ["Name", "SKU", "Price", "WholesalePrice", "StockQty", "Cost"])
+        sort_asc = c_ord.radio("Dir", ["↑", "↓"], horizontal=True) == "↑"
+        show_inactive = c_show.checkbox("Show Inactive Items", value=False)
+
+        # ── Build view ──
+        view_df = full_inv.copy()
+        if not show_inactive:
+            view_df = view_df[view_df['Active'] == True]
         if search:
-            mask = df_inv.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)
-            df_inv = df_inv[mask]
-            
+            mask = view_df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)
+            view_df = view_df[mask]
+        if sort_col in view_df.columns:
+            try:
+                if sort_col in ['Price', 'WholesalePrice', 'StockQty', 'Cost']:
+                    view_df = view_df.copy()
+                    view_df[sort_col] = pd.to_numeric(view_df[sort_col], errors='coerce')
+                view_df = view_df.sort_values(by=sort_col, ascending=sort_asc)
+            except Exception:
+                pass
+
+        # ── Export the filtered/sorted view ──
+        csv_export = view_df.to_csv(index=False).encode('utf-8')
+        st.download_button("🖨️ Export / Print This List (CSV)", data=csv_export,
+                           file_name="inventory_export.csv", mime="text/csv")
+
         with st.form("inv_editor"):
-            # Added Cost to column config for better formatting
             edited_df = st.data_editor(
-                df_inv, 
-                use_container_width=True, 
+                view_df,
+                use_container_width=True,
+                height=600,
                 num_rows="dynamic",
                 column_config={
+                    "SKU": st.column_config.TextColumn("SKU"),
+                    "Active": st.column_config.CheckboxColumn("Active", help="Uncheck to hide from kiosk and searches"),
                     "Price": st.column_config.NumberColumn(format="$%.2f"),
                     "WholesalePrice": st.column_config.NumberColumn(format="$%.2f"),
                     "Cost": st.column_config.NumberColumn(format="$%.2f"),
                 }
             )
             if st.form_submit_button("💾 Save Changes"):
-                # Safety check inside backend is now active
-                db.update_inventory_batch(edited_df)
+                # Merge edits back into the full inventory (preserves hidden inactive rows)
+                full_inv.update(edited_df)
+                # Remove rows deleted from the visible view
+                deleted_idx = view_df.index.difference(edited_df.index)
+                full_inv = full_inv.drop(index=deleted_idx, errors='ignore')
+                # Append newly added rows
+                new_idx = edited_df.index.difference(view_df.index)
+                if not new_idx.empty:
+                    full_inv = pd.concat([full_inv, edited_df.loc[new_idx]], ignore_index=True)
+                db.update_inventory_batch(full_inv.reset_index(drop=True))
                 st.success("Database Updated Successfully!")
                 auto_refresh()
 
@@ -572,8 +628,11 @@ elif menu == "🛒 Checkout":
         with c1:
             st.subheader("Add Item")
             is_wholesale = st.checkbox("Apply Wholesale Pricing?", value=False)
-            inv = st.session_state['data']['inventory']
+            inv = st.session_state['data']['inventory'].copy()
             cust = st.session_state['data']['customers']
+            # Hide inactive items from checkout search
+            if 'Active' in inv.columns:
+                inv = inv[inv['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
             inv['lookup'] = inv['SKU'].astype(str) + " | " + inv['Name']
             selected_item_str = st.selectbox("Search Item", inv['lookup'], index=None)
             
@@ -805,7 +864,12 @@ elif menu == "👥 Customers":
                 st.session_state['active_cust_id'] = None
                 st.rerun()
             c_title.title(row['Name'])
-            
+
+            # Pre-compute transaction history so the preview can render full-width below columns
+            my_trans = df_trans[df_trans['CustomerID'] == cid]
+            if not my_trans.empty:
+                my_trans = my_trans.sort_values(by="Timestamp", ascending=False)
+
             # --- MAIN CONTENT ---
             col1, col2 = st.columns([1, 1.5])
             
@@ -855,74 +919,65 @@ elif menu == "👥 Customers":
             # RIGHT: Purchase History
             with col2:
                 st.subheader("History")
-                my_trans = df_trans[df_trans['CustomerID'] == cid]
-                
                 if my_trans.empty:
                     st.info("No purchase history.")
                 else:
-                    my_trans = my_trans.sort_values(by="Timestamp", ascending=False)
-                    
                     # Iterate with Index (i) to fix duplicate key error
                     for i, t_row in my_trans.iterrows():
                         with st.container(border=True):
                             c_d, c_a, c_s, c_act = st.columns([1.5, 1, 1, 1.5])
-                            
+
                             c_d.write(f"**{str(t_row['Timestamp'])[:10]}**")
                             c_d.caption(f"#{t_row['TransactionID']}")
-                            
+
                             try: amt = float(t_row['TotalAmount'] if t_row['TotalAmount'] != '' else 0)
                             except: amt = 0.0
                             c_a.write(f"**${amt:.2f}**")
-                            
+
                             status = str(t_row['Status']).strip().title()
                             is_paid = (status == "Paid")
                             if is_paid: c_s.success("Paid", icon="✅")
                             else: c_s.warning("Unpaid", icon="⏳")
-                            
+
                             # ACTION BUTTONS (Unique Keys Added)
                             b1, b2, b3 = c_act.columns(3)
-                            
+
                             # KEY FIX: Append _{i} to ensure uniqueness
                             if b1.button("👁️", key=f"v_{t_row['TransactionID']}_{i}"):
                                 st.session_state[f"view_inv_{t_row['TransactionID']}"] = True
                                 st.rerun()
-                                
+
                             if not is_paid:
                                 if b2.button("💲", key=f"p_{t_row['TransactionID']}_{i}", help="Mark Paid"):
                                     db.mark_invoice_paid(t_row['TransactionID'])
                                     st.toast("Paid!")
                                     auto_refresh()
-                                    
+
                             if b3.button("🗑️", key=f"d_{t_row['TransactionID']}_{i}", type="primary"):
                                 db.delete_invoice(t_row['TransactionID'])
                                 st.warning("Deleted.")
                                 auto_refresh()
 
-                        # Previewer (Customer History)
-                        if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
-                            with st.container(border=True):
-                                # Close Button
-                                if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
-                                    st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
-                                    st.rerun()
-                                    
-                                # Build PDF from stored transaction data
-                                t_id = str(t_row['TransactionID'])
-                                pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
-                                
-                                # 2. Download/Print Button (Top of Viewer)
-                                st.download_button(
-                                    "🖨️ Download / Print Invoice", 
-                                    data=pdf_bytes,
-                                    file_name=f"Invoice_{t_id}.pdf",
-                                    mime="application/pdf",
-                                    key=f"dl_{t_id}_{i}",
-                                    type="primary",
-                                    use_container_width=True
-                                )
-                                
-                                # 3. PDF Viewer (No Base64!)
-                                pdf_viewer(input=pdf_bytes, width=1000, height=1000)
+            # Full-width receipt previewer (outside column layout so it uses the full page width)
+            if not my_trans.empty:
+                for i, t_row in my_trans.iterrows():
+                    if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
+                        with st.container(border=True):
+                            if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
+                                st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
+                                st.rerun()
+                            t_id = str(t_row['TransactionID'])
+                            pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
+                            st.download_button(
+                                "🖨️ Download / Print Invoice",
+                                data=pdf_bytes,
+                                file_name=f"Invoice_{t_id}.pdf",
+                                mime="application/pdf",
+                                key=f"dl_{t_id}_{i}",
+                                type="primary",
+                                use_container_width=True
+                            )
+                            pdf_viewer(input=pdf_bytes, width=1000, height=1000)
 
 # ==========================================
 # 5. REPORTS

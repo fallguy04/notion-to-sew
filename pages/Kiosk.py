@@ -421,6 +421,9 @@ if st.session_state['page'] == 'shop':
             st.rerun()
 
     df = st.session_state['data']['inventory'].copy()
+    # Hide inactive items from kiosk search
+    if 'Active' in df.columns:
+        df = df[df['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
     df['lookup'] = df['SKU'].astype(str) + " — " + df['Name']
 
     _, search_col, _ = st.columns([1, 6, 1])
