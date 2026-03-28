@@ -5,7 +5,7 @@ from datetime import datetime, date
 from streamlit_pdf_viewer import pdf_viewer
 
 # --- CONFIG ---
-st.set_page_config(page_title="Admin | Notion to Sew", layout="wide", page_icon="🧵")
+st.set_page_config(page_title="Admin | Notion to Sew", layout="wide", page_icon="🧵", initial_sidebar_state="expanded")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -483,11 +483,20 @@ with st.sidebar:
 if st.session_state.get('inv_fullscreen'):
     st.markdown("""<style>
     section[data-testid="stSidebar"] { display: none !important; }
-    .block-container { max-width: 100% !important; padding: 0.75rem 1.5rem !important; }
+    .block-container { max-width: 100% !important; padding: 0.5rem 1.5rem !important; }
     </style>""", unsafe_allow_html=True)
-    _hdr, _exit = st.columns([6, 1])
-    _hdr.subheader("📋 Edit Inventory Database")
-    if _exit.button("✕ Exit Full Screen", use_container_width=True, type="primary"):
+    st.markdown("""
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                background:#1a73e8;color:#fff;padding:10px 20px;border-radius:8px;margin-bottom:12px;">
+        <span style="font-family:'Roboto',sans-serif;font-size:1rem;font-weight:500;">
+            📋 Edit Inventory Database &nbsp;—&nbsp; Full Screen Mode
+        </span>
+        <span style="font-family:'Roboto',sans-serif;font-size:0.8rem;opacity:0.85;">
+            Use the button below to exit ↓
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("✕ Exit Full Screen — Return to Normal View", type="primary", use_container_width=True):
         st.session_state['inv_fullscreen'] = False
         st.rerun()
     _render_inv_editor(height=900)
