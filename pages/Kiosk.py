@@ -16,307 +16,6 @@ components.html(
     height=0
 )
 
-# --- CUSTOM CSS (ChromeOS / Google 2026 Design) ---
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
-@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
-
-/* ── GLOBAL ──
-   DO NOT include `span` or `[class*="css"]` here.
-   `span` breaks the sidebar toggle icon (Material Icons ligature lives in a <span>).
-   `[class*="css"]` hits Streamlit's emotion class names and destroys popup menus.  ── */
-html, body, p, label, input, textarea, select {
-    font-family: 'Roboto', sans-serif !important;
-    -webkit-font-smoothing: antialiased;
-}
-/* Force Roboto only on our own component wrappers, not Streamlit internals */
-.stApp, .stMarkdown, .stText, .element-container {
-    font-family: 'Roboto', sans-serif !important;
-}
-.stApp { background: #f8f9fa !important; }
-#MainMenu, footer, header { visibility: hidden; }
-
-/* ── STAFF SIDEBAR ── */
-section[data-testid="stSidebar"] {
-    background: #ffffff !important;
-    border-right: 1px solid #dadce0 !important;
-}
-section[data-testid="stSidebar"] h3 {
-    font-family: 'Roboto', sans-serif !important;
-    color: #202124 !important;
-    font-size: 1rem !important;
-    font-weight: 500 !important;
-}
-/* Target only p and label — NOT span, which is used for button text */
-section[data-testid="stSidebar"] p,
-section[data-testid="stSidebar"] label {
-    color: #5f6368 !important;
-    font-size: 0.875rem !important;
-}
-section[data-testid="stSidebar"] .stButton > button {
-    font-family: 'Roboto', sans-serif !important;
-    background: #1a73e8 !important;
-    color: #ffffff !important;
-    border: none !important;
-    border-radius: 8px !important;
-    font-size: 0.875rem !important;
-    font-weight: 500 !important;
-    min-height: 36px !important;
-    padding: 6px 16px !important;
-    margin-top: 6px !important;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2) !important;
-    letter-spacing: 0.01em !important;
-    width: 100% !important;
-}
-section[data-testid="stSidebar"] .stButton > button:hover {
-    background: #1557b0 !important;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.25) !important;
-}
-/* Ensure button text (in <span> inside button) inherits the button's white color */
-section[data-testid="stSidebar"] .stButton > button * {
-    color: inherit !important;
-}
-
-/* ── KIOSK HEADER BAND ── */
-.kiosk-header {
-    background: #ffffff;
-    border-radius: 12px;
-    padding: 20px 28px;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border: 1px solid #dadce0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
-.kiosk-header-title {
-    color: #202124;
-    font-family: 'Roboto', sans-serif;
-    font-size: 1.4rem;
-    font-weight: 500;
-    margin: 0;
-}
-.kiosk-header-sub {
-    color: #5f6368;
-    font-family: 'Roboto', sans-serif;
-    font-size: 0.85rem;
-    font-weight: 400;
-    margin: 3px 0 0;
-}
-
-/* ── SEARCH HERO ── */
-.search-hero {
-    text-align: center;
-    padding: 32px 16px 20px;
-}
-.search-hero-title {
-    font-family: 'Roboto', sans-serif;
-    font-size: 2rem;
-    font-weight: 400;
-    color: #202124;
-    margin: 0 0 6px;
-    letter-spacing: -0.01em;
-}
-.search-hero-sub {
-    font-family: 'Roboto', sans-serif;
-    font-size: 1.1rem;
-    font-weight: 400;
-    color: #5f6368;
-    margin: 0 0 24px;
-}
-
-/* ── ALL USER BUTTONS: iPad-sized tap targets ── */
-.stButton > button {
-    font-family: 'Roboto', sans-serif !important;
-    min-height: 52px !important;
-    font-size: 0.9375rem !important;
-    font-weight: 500 !important;
-    border-radius: 24px !important;
-    letter-spacing: 0.01em !important;
-    padding: 10px 24px !important;
-    height: auto !important;
-    transition: box-shadow 0.2s ease, background 0.2s ease !important;
-}
-/* Prevent global p/label color rules from overriding button text */
-.stButton > button *, .stDownloadButton > button * {
-    color: inherit !important;
-}
-
-/* Primary — Google Blue filled */
-.stButton > button[kind="primary"] {
-    background: #1a73e8 !important;
-    border: none !important;
-    color: #ffffff !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
-}
-.stButton > button[kind="primary"]:hover {
-    background: #1557b0 !important;
-    box-shadow: 0 2px 8px rgba(26,115,232,0.4) !important;
-}
-.stButton > button[kind="primary"]:active {
-    background: #1246a0 !important;
-    box-shadow: none !important;
-}
-
-/* Secondary — outlined */
-.stButton > button:not([kind="primary"]) {
-    background: #ffffff !important;
-    border: 1px solid #dadce0 !important;
-    color: #1a73e8 !important;
-    box-shadow: none !important;
-}
-.stButton > button:not([kind="primary"]):hover {
-    background: #e8f0fe !important;
-    border-color: #1a73e8 !important;
-}
-
-/* ── SEARCH SELECTBOX — pill-shaped, Google style ── */
-div[data-testid="stSelectbox"] > div > div {
-    min-height: 56px !important;
-    border-radius: 28px !important;
-    border: 1px solid #dadce0 !important;
-    font-size: 1.125rem !important;
-    font-weight: 400 !important;
-    background: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
-    padding-left: 24px !important;
-    padding-right: 16px !important;
-    display: flex !important;
-    align-items: center !important;
-    outline: none !important;
-    transition: box-shadow 0.15s, border-color 0.15s !important;
-}
-/* Inner value container — vertically centered */
-div[data-testid="stSelectbox"] > div > div > div[class] {
-    display: flex !important;
-    align-items: center !important;
-    line-height: 1.2 !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-}
-div[data-testid="stSelectbox"] > div > div:focus-within {
-    border-color: #1a73e8 !important;
-    box-shadow: 0 0 0 2px rgba(26,115,232,0.2), 0 2px 8px rgba(0,0,0,0.08) !important;
-    outline: none !important;
-}
-div[data-testid="stSelectbox"] label {
-    font-family: 'Roboto', sans-serif !important;
-    font-size: 0.875rem !important;
-    font-weight: 500 !important;
-    color: #5f6368 !important;
-}
-
-/* ── TEXT INPUTS ── */
-div[data-baseweb="input"] > div {
-    border-radius: 8px !important;
-    border: 1px solid #dadce0 !important;
-    font-size: 1rem !important;
-    background: #ffffff !important;
-    min-height: 52px !important;
-    box-shadow: none !important;
-    outline: none !important;
-}
-div[data-baseweb="input"] input {
-    outline: none !important;
-}
-div[data-baseweb="input"]:focus-within > div {
-    border-color: #1a73e8 !important;
-    box-shadow: 0 0 0 2px rgba(26,115,232,0.15) !important;
-}
-
-/* ── PRODUCT RESULT CARD ── */
-div[data-testid="stContainer"] {
-    background: #ffffff !important;
-    border: 1px solid #dadce0 !important;
-    border-radius: 12px !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.07) !important;
-}
-
-/* ── QUANTITY DISPLAY ── */
-.qty-display {
-    font-family: 'Roboto', sans-serif;
-    font-size: 2rem;
-    font-weight: 400;
-    color: #202124;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 56px;
-    width: 100%;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border: 1px solid #dadce0;
-}
-
-/* ── TYPOGRAPHY ── */
-h1 { font-family: 'Roboto', sans-serif !important; font-size: 1.75rem !important; font-weight: 400 !important; color: #202124 !important; }
-h2 { font-family: 'Roboto', sans-serif !important; font-size: 1.25rem !important; font-weight: 500 !important; color: #202124 !important; }
-h3 { font-family: 'Roboto', sans-serif !important; font-size: 1rem !important; font-weight: 500 !important; color: #3c4043 !important; }
-
-/* ── SUCCESS SCREEN ── */
-.success-card {
-    background: #ffffff;
-    border-radius: 16px;
-    border: 1px solid #dadce0;
-    padding: 48px 40px;
-    text-align: center;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-}
-.success-card .success-icon {
-    font-size: 4rem;
-    display: block;
-    margin-bottom: 16px;
-}
-.success-card h1 {
-    color: #202124 !important;
-    font-size: 2rem !important;
-    font-weight: 400 !important;
-    margin-bottom: 8px !important;
-}
-.success-card .order-info {
-    font-size: 1.1rem;
-    color: #1a73e8;
-    font-weight: 500;
-}
-
-/* ── ALERTS ── */
-div[data-testid="stAlert"] { border-radius: 8px !important; font-size: 0.9rem !important; }
-
-/* ── TABS ── */
-.stTabs [data-baseweb="tab-list"] {
-    background: transparent !important;
-    border-bottom: 1px solid #dadce0 !important;
-    gap: 0 !important;
-    padding: 0 !important;
-}
-.stTabs [data-baseweb="tab"] {
-    background: transparent !important;
-    border-radius: 0 !important;
-    padding: 10px 24px !important;
-    font-family: 'Roboto', sans-serif !important;
-    font-size: 0.875rem !important;
-    font-weight: 500 !important;
-    color: #5f6368 !important;
-    border: none !important;
-    border-bottom: 3px solid transparent !important;
-    min-height: 48px !important;
-}
-.stTabs [data-baseweb="tab"][aria-selected="true"] {
-    color: #1a73e8 !important;
-    border-bottom: 3px solid #1a73e8 !important;
-}
-.stTabs [data-baseweb="tab-border"],
-.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
-
-/* ── DIVIDER ── */
-hr { border-color: #dadce0 !important; }
-
-/* ── FORM ── */
-div[data-testid="stForm"] { border: none !important; background: transparent !important; }
-
-</style>
-""", unsafe_allow_html=True)
 
 # --- INIT ---
 if 'data' not in st.session_state or not st.session_state['data']:
@@ -406,13 +105,9 @@ if st.session_state['page'] == 'shop':
     # Top bar
     c1, c2 = st.columns([5, 1])
     with c1:
-        st.markdown("""
-        <div class="kiosk-header">
-            <div>
-                <div class="kiosk-header-title">🧵 Notion to Sew</div>
-                <div class="kiosk-header-sub">Type any item name or number below</div>
-            </div>
-        </div>""", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.subheader("🧵 Notion to Sew")
+            st.caption("Type any item name or number below")
     with c2:
         st.write("")
         st.write("")
@@ -459,7 +154,7 @@ if st.session_state['page'] == 'shop':
                     if st.session_state['main_qty'] > 1:
                         st.session_state['main_qty'] -= 1
                         st.rerun()
-                q2.markdown(f"<div class='qty-display'>{st.session_state['main_qty']}</div>", unsafe_allow_html=True)
+                q2.metric(" ", st.session_state['main_qty'])
                 if q3.button("＋", key="main_add"):
                     st.session_state['main_qty'] += 1
                     st.rerun()
@@ -477,12 +172,7 @@ if st.session_state['page'] == 'shop':
     else:
         # Friendly idle prompt when nothing is selected
         st.write("")
-        st.markdown(
-            "<p style='text-align:center; color:#9aa0a6; font-size:1rem; padding:24px 0;'>"
-            "Not sure what to search? Ask our staff for help — we're happy to assist! 😊"
-            "</p>",
-            unsafe_allow_html=True
-        )
+        st.info("Not sure what to search? Ask our staff for help — we're happy to assist! 😊")
 
 # ==========================================
 # PAGE 2: CHECKOUT
@@ -658,13 +348,9 @@ elif st.session_state['page'] == 'success':
     order = st.session_state.get('last_kiosk_order', {})
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st.markdown(f"""
-        <div class="success-card">
-            <span class="success-icon">✅</span>
-            <h1>Thank You!</h1>
-            <div class="order-info">Order #{order.get('id', '')} &nbsp;·&nbsp; ${order.get('total', 0):.2f}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("# ✅ Thank You!")
+            st.subheader(f"Order #{order.get('id', '')} · ${order.get('total', 0):.2f}")
         st.write("")
         with st.container(border=True):
 
