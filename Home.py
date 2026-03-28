@@ -334,6 +334,49 @@ st.markdown("""
   </svg>
   <span>Open Inventory Database</span>
 </a>
+
+<style>
+/* ── Edit DB FAB (top-left, hidden by sidebar when sidebar is open) ── */
+#inv-db-fab {
+    position: fixed !important;
+    top: 14px !important;
+    left: 10px !important;
+    z-index: 99 !important;          /* sidebar z-index is ~99990 — sidebar covers this */
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    background: #ffffff !important;
+    border: 1px solid #dadce0 !important;
+    border-radius: 24px !important;
+    padding: 6px 14px 6px 10px !important;
+    box-shadow: 0 1px 3px rgba(60,64,67,0.2), 0 2px 6px rgba(60,64,67,0.1) !important;
+    text-decoration: none !important;
+    transition: box-shadow 0.15s, background 0.15s !important;
+    cursor: pointer !important;
+}
+#inv-db-fab:hover {
+    background: #f1f3f4 !important;
+    box-shadow: 0 2px 6px rgba(60,64,67,0.25), 0 4px 12px rgba(60,64,67,0.12) !important;
+    text-decoration: none !important;
+}
+#inv-db-fab span {
+    font-family: 'Roboto', sans-serif !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    color: #3c4043 !important;
+    white-space: nowrap !important;
+}
+</style>
+<a href="?fs=1" id="inv-db-fab" title="Open Edit Database in full screen">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none"
+       stroke="#1a73e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+    <line x1="3" y1="9" x2="21" y2="9"/>
+    <line x1="3" y1="15" x2="21" y2="15"/>
+    <line x1="9" y1="9" x2="9" y2="21"/>
+  </svg>
+  <span>Edit Inventory DB</span>
+</a>
 """, unsafe_allow_html=True)
 
 # --- HELPER: AUTO REFRESH ---
@@ -449,6 +492,12 @@ if 'cart' not in st.session_state:
     st.session_state['cart'] = []
 if 'inv_fullscreen' not in st.session_state:
     st.session_state['inv_fullscreen'] = False
+
+# Handle FAB click — ?fs=1 query param triggers fullscreen editor
+if st.query_params.get('fs') == '1':
+    st.session_state['inv_fullscreen'] = True
+    st.query_params.clear()
+    st.rerun()
 if 'data' not in st.session_state or not st.session_state['data']:
     with st.spinner("Connecting to Headquarters..."):
         st.session_state['data'] = db.get_data()
@@ -484,6 +533,7 @@ if st.session_state.get('inv_fullscreen'):
     st.markdown("""<style>
     section[data-testid="stSidebar"] { display: none !important; }
     .block-container { max-width: 100% !important; padding: 0.5rem 1.5rem !important; }
+    #inv-db-fab { display: none !important; }
     </style>""", unsafe_allow_html=True)
     st.markdown("""
     <div style="display:flex;align-items:center;justify-content:space-between;
@@ -628,10 +678,6 @@ elif menu == "📦 Inventory":
 
     # --- TAB 2: EDIT DATABASE ---
     with tab2:
-        _fs_col, _ = st.columns([1, 5])
-        if _fs_col.button("⛶ Full Screen", key="inv_fs_open"):
-            st.session_state['inv_fullscreen'] = True
-            st.rerun()
         _render_inv_editor(height=600)
 
     with tab3:
