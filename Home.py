@@ -484,6 +484,7 @@ if st.session_state.get('inv_fullscreen'):
     st.markdown("""<style>
     section[data-testid="stSidebar"] { display: none !important; }
     .block-container { max-width: 100% !important; padding: 0.5rem 1.5rem !important; }
+    #sheets-fab { display: none !important; }
     </style>""", unsafe_allow_html=True)
     _hdr, _exit = st.columns([6, 1])
     _hdr.subheader("📋 Edit Inventory Database — Full Screen")
