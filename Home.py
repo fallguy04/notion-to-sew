@@ -447,6 +447,8 @@ def _render_inv_editor(height=600):
 # --- INIT STATE ---
 if 'cart' not in st.session_state:
     st.session_state['cart'] = []
+if 'inv_fullscreen' not in st.session_state:
+    st.session_state['inv_fullscreen'] = False
 if 'data' not in st.session_state or not st.session_state['data']:
     with st.spinner("Connecting to Headquarters..."):
         st.session_state['data'] = db.get_data()
@@ -474,6 +476,22 @@ with st.sidebar:
     st.divider()
     if st.button("🔄 Refresh Database"):
         auto_refresh()
+
+# ==========================================
+# FULLSCREEN: EDIT DATABASE
+# ==========================================
+if st.session_state.get('inv_fullscreen'):
+    st.markdown("""<style>
+    section[data-testid="stSidebar"] { display: none !important; }
+    .block-container { max-width: 100% !important; padding: 0.5rem 1.5rem !important; }
+    </style>""", unsafe_allow_html=True)
+    _hdr, _exit = st.columns([6, 1])
+    _hdr.subheader("📋 Edit Inventory Database — Full Screen")
+    if _exit.button("✕ Exit Full Screen", use_container_width=True, type="primary"):
+        st.session_state['inv_fullscreen'] = False
+        st.rerun()
+    _render_inv_editor(height=900)
+    st.stop()
 
 # ==========================================
 # 1. DASHBOARD
@@ -601,6 +619,10 @@ elif menu == "📦 Inventory":
 
     # --- TAB 2: EDIT DATABASE ---
     with tab2:
+        _fs_col, _ = st.columns([1, 5])
+        if _fs_col.button("⛶ Full Screen", key="inv_fs_open"):
+            st.session_state['inv_fullscreen'] = True
+            st.rerun()
         _render_inv_editor(height=600)
 
     with tab3:
