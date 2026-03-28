@@ -25,6 +25,7 @@ html, body, p, label, input, textarea, select {
 }
 .stApp { background: #f8f9fa !important; }
 #MainMenu, footer { visibility: hidden; }
+header[data-testid="stHeader"] { display: none !important; }
 
 /* ── SIDEBAR — Light / ChromeOS style ── */
 section[data-testid="stSidebar"] {
@@ -294,7 +295,7 @@ st.markdown("""
 <style>
 #sheets-fab {
     position: fixed !important;
-    top: 65px !important;
+    top: 14px !important;
     right: 20px !important;
     z-index: 1000000 !important;
     display: flex !important;
@@ -331,7 +332,7 @@ st.markdown("""
     <rect x="20" y="37" width="24" height="3" rx="1" fill="#ffffff" opacity="0.9"/>
     <rect x="20" y="44" width="16" height="3" rx="1" fill="#ffffff" opacity="0.9"/>
   </svg>
-  <span>Open Sheet</span>
+  <span>Open Inventory Database</span>
 </a>
 """, unsafe_allow_html=True)
 
