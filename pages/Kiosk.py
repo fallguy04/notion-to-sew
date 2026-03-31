@@ -205,8 +205,6 @@ elif st.session_state['page'] == 'checkout':
     with c_right:
         with st.container(border=True):
             st.subheader("Total")
-            subtotal = sum(item['qty'] * item['price'] for item in st.session_state['kiosk_cart'])
-            
             # Tax Logic
             if 'settings' in st.session_state['data']:
                 s_df = st.session_state['data']['settings']
@@ -223,36 +221,65 @@ elif st.session_state['page'] == 'checkout':
                 if clean_rate > 1: clean_rate = clean_rate / 100
             except: clean_rate = 0.0
 
-            tax_amt = subtotal * clean_rate
-            total = subtotal + tax_amt
-            
-            st.write(f"Subtotal: ${subtotal:.2f}")
-            st.write(f"Tax: ${tax_amt:.2f}")
-            
-            # Customer & Credit Logic (NEW for Kiosk)
+            # Customer & Credit Logic
             cust_tab1, cust_tab2 = st.tabs(["Search Name", "New Customer"])
             selected_cust = None
             cust_credit = 0.0
-            
+            cust_is_wholesale = False
+            cust_tax_override = None
+
             with cust_tab1:
                 cust_df = st.session_state['data']['customers']
                 cust_list = cust_df['Name']
                 selected_cust = st.selectbox("Name", cust_list, index=None, placeholder="Select...", label_visibility="collapsed")
-                
+
                 if selected_cust:
                     cust_row = cust_df[cust_df['Name'] == selected_cust].iloc[0]
                     try: cust_credit = float(cust_row.get('Credit', 0) if cust_row.get('Credit') != "" else 0)
                     except: cust_credit = 0.0
-                    
+                    cust_is_wholesale = str(cust_row.get('IsWholesale', '')).strip().upper() == 'TRUE'
+                    raw_cust_tax = str(cust_row.get('TaxRate', '')).strip()
+                    try:
+                        cust_tax_val = float(raw_cust_tax)
+                        if cust_tax_val > 0:
+                            cust_tax_override = cust_tax_val / 100 if cust_tax_val > 1 else cust_tax_val
+                    except (ValueError, TypeError):
+                        pass
+
             with cust_tab2:
                 with st.form("new_kiosk_cust"):
                     n_name = st.text_input("Name")
                     n_email = st.text_input("Email")
                     if st.form_submit_button("Join"):
                         db.add_customer(n_name, n_email)
-                        # Clear cache and reload
                         del st.session_state['data']
                         st.rerun()
+
+            # Apply customer-specific overrides
+            if cust_tax_override is not None:
+                clean_rate = cust_tax_override
+
+            # Build checkout_cart: use wholesale prices for wholesale customers
+            inv_df = st.session_state['data']['inventory']
+            checkout_cart = []
+            for item in st.session_state['kiosk_cart']:
+                eff_price = item['price']
+                if cust_is_wholesale:
+                    inv_rows = inv_df[inv_df['SKU'].astype(str) == str(item['sku'])]
+                    if not inv_rows.empty:
+                        ws_p = float(inv_rows.iloc[0].get('WholesalePrice', 0) or 0)
+                        if ws_p > 0:
+                            eff_price = ws_p
+                checkout_cart.append({**item, 'price': eff_price})
+
+            subtotal = sum(i['qty'] * i['price'] for i in checkout_cart)
+            tax_amt = 0.0 if cust_is_wholesale else subtotal * clean_rate
+            total = subtotal + tax_amt
+
+            if cust_is_wholesale:
+                st.info("🏭 Wholesale customer — wholesale pricing applied, no tax")
+            st.write(f"Subtotal: ${subtotal:.2f}")
+            st.write(f"Tax: ${tax_amt:.2f}")
 
             credit_applied = 0.0
             if selected_cust and cust_credit > 0:
@@ -299,8 +326,8 @@ elif st.session_state['page'] == 'checkout':
 
                         with st.spinner("Processing..."):
                             new_id = db.commit_sale(
-                                st.session_state['kiosk_cart'], final_total, tax_amt, cust_id,
-                                pay_method, False, status, credit_used=credit_applied
+                                checkout_cart, final_total, tax_amt, cust_id,
+                                pay_method, cust_is_wholesale, status, credit_used=credit_applied
                             )
 
                             # PDF Generation
@@ -310,7 +337,7 @@ elif st.session_state['page'] == 'checkout':
                                 address = s_dict.get("Address", "Modesto, CA")
                             else: address = "Modesto, CA"
 
-                            pdf_bytes = db.create_pdf(new_id, cust_display, address, st.session_state['kiosk_cart'], subtotal, tax_amt, final_total, "Upon Receipt", credit_applied=credit_applied)
+                            pdf_bytes = db.create_pdf(new_id, cust_display, address, checkout_cart, subtotal, tax_amt, final_total, "Upon Receipt", credit_applied=credit_applied)
 
                             # Send Email Receipt
                             email_sent = False

@@ -66,13 +66,22 @@ def auto_refresh():
 def page_header(icon: str, title: str, subtitle: str = ""):
     colored_header(label=f"{icon} {title}", description=subtitle, color_name="blue-70")
 
+# --- HELPER: Normalize transaction IDs (handles "1001.0" → "1001" from old imports) ---
+def _normalize_tid(tid) -> str:
+    s = str(tid).strip()
+    try:
+        return str(int(float(s)))
+    except (ValueError, TypeError):
+        return s
+
 # --- HELPER: Build PDF from stored transaction ---
 def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
     """Reconstruct a PDF for any historical transaction from session data."""
     data = st.session_state['data']
+    norm_id = _normalize_tid(transaction_id)
     items_df = data['items'].copy()
-    items_df['TransactionID'] = items_df['TransactionID'].astype(str)
-    inv_items = items_df[items_df['TransactionID'] == transaction_id]
+    items_df['TransactionID'] = items_df['TransactionID'].apply(_normalize_tid)
+    inv_items = items_df[items_df['TransactionID'] == norm_id]
     cart = []
     for _, item in inv_items.iterrows():
         try: q, p = int(item['QtySold']), float(item['Price'])
@@ -82,8 +91,9 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
     if 'settings' in data:
         s = dict(zip(data['settings']['Key'], data['settings']['Value']))
         addr = s.get("Address", addr)
-    trans_df = data['transactions']
-    t = trans_df[trans_df['TransactionID'].astype(str) == transaction_id]
+    trans_df = data['transactions'].copy()
+    trans_df['TransactionID'] = trans_df['TransactionID'].apply(_normalize_tid)
+    t = trans_df[trans_df['TransactionID'] == norm_id]
     tax, total, due = 0.0, 0.0, ""
     if not t.empty:
         r = t.iloc[0]
@@ -170,6 +180,10 @@ if 'data' not in st.session_state or not st.session_state['data']:
             st.warning("⚠️ Could not load data from Google Sheets. Check your connection or API limits.")
             st.stop() # This halts the app so it doesn't crash on line 420!
 
+# --- AUTH GUARD: Unauthenticated users go to Kiosk ---
+if not st.session_state.get('admin_authenticated'):
+    st.switch_page("pages/Kiosk.py")
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.markdown("## 🧵 Notion to Sew")
@@ -221,7 +235,7 @@ if menu == "📊 Dashboard":
         df_filtered['TotalAmount'] = pd.to_numeric(df_filtered['TotalAmount'], errors='coerce').fillna(0)
         total_sales = df_filtered['TotalAmount'].sum()
         
-        unpaid_df = df[df['Status'] == 'Pending']
+        unpaid_df = df[df['Status'].astype(str).str.strip().str.lower().isin(['pending', 'unpaid'])]
         unpaid_total = pd.to_numeric(unpaid_df['TotalAmount'], errors='coerce').sum()
         
         c1, c2, c3 = st.columns(3)
@@ -288,13 +302,25 @@ elif menu == "📦 Inventory":
             with st.form("restock_form"):
                 c1, c2 = st.columns(2)
                 qty_add = c1.number_input("Quantity to ADD (+)", 1, 10000, 50)
-                new_cost_val = c2.number_input("Unit Cost ($)", 0.0, 1000.0, float(row.get('Cost', 0.0)))
-                
+                new_cost_val = c2.number_input("Unit Cost ($)", 0.0, 10000.0, float(row.get('Cost', 0.0)))
+
                 st.caption(f"New Total Stock will be: {row['StockQty'] + qty_add}")
-                
+
+                st.divider()
+                log_purchase = st.checkbox("📒 Also log as Inventory Purchase expense?", value=True,
+                                           help="Records total purchase cost in Expenses for accurate P&L reporting")
+                ex_c1, ex_c2 = st.columns(2)
+                ex_date = ex_c1.date_input("Purchase Date", value=date.today())
+                ex_desc = ex_c2.text_input("Description", value=f"Restocked {row['Name']} (SKU: {row['SKU']})")
+
                 if st.form_submit_button("➕ Update Stock & Cost", type="primary"):
                     db.restock_item(lookup_sku, qty_add, new_cost_val)
-                    st.success(f"Added {qty_add} to {row['Name']}!")
+                    if log_purchase and new_cost_val > 0:
+                        total_purchase = qty_add * new_cost_val
+                        db.add_expense(ex_date, "Inventory Purchase", total_purchase, ex_desc)
+                        st.success(f"Added {qty_add} units to {row['Name']} and logged ${total_purchase:.2f} inventory purchase expense!")
+                    else:
+                        st.success(f"Added {qty_add} to {row['Name']}!")
                     auto_refresh()
                     
         elif lookup_sku:
@@ -403,7 +429,7 @@ elif menu == "🛒 Checkout":
         # LEFT: Add Item
         with c1:
             st.subheader("Add Item")
-            is_wholesale = st.checkbox("Apply Wholesale Pricing?", value=False)
+            is_wholesale = st.checkbox("Apply Wholesale Pricing?", key='ck_wholesale')
             inv = st.session_state['data']['inventory'].copy()
             cust = st.session_state['data']['customers']
             # Hide inactive items from checkout search
@@ -456,24 +482,48 @@ elif menu == "🛒 Checkout":
                         venmo_user = settings_cache.get("VenmoUser", "")
                     else: raw_rate = "0.08"; venmo_user = ""
                     
-                    try: tax_rate = float(str(raw_rate).replace("%", "").strip())
+                    try:
+                        tax_rate = float(str(raw_rate).replace("%", "").strip())
+                        if tax_rate > 1: tax_rate = tax_rate / 100
                     except: tax_rate = 0.0
-                    
-                    apply_tax = st.checkbox(f"Apply Tax ({(tax_rate*100):.3f}%)", value=not is_wholesale)
-                    tax_amt = subtotal * tax_rate if apply_tax else 0.0
+                    # Use per-customer tax rate stored in session state (set on customer change via rerun)
+                    effective_tax_rate = st.session_state.get('co_effective_tax_rate', tax_rate)
+
+                    apply_tax = st.checkbox(f"Apply Tax ({(effective_tax_rate*100):.3f}%)", value=not is_wholesale)
+                    tax_amt = subtotal * effective_tax_rate if apply_tax else 0.0
                     cart_total = subtotal + tax_amt
-                    
+
                     # CUSTOMER & CREDIT LOGIC
                     cust_tab1, cust_tab2 = st.tabs(["Existing", "New"])
-                    selected_cust = None; cust_credit = 0.0
+                    selected_cust = None; cust_credit = 0.0; cust_id = "Guest"
                     with cust_tab1:
-                        selected_cust_name = st.selectbox("Customer", cust['Name'], index=None)
+                        selected_cust_name = st.selectbox("Customer", cust['Name'], index=None, key='co_cust_sel')
                         if selected_cust_name:
                             selected_cust = selected_cust_name
                             cust_row = cust[cust['Name'] == selected_cust].iloc[0]
                             cust_id = cust_row['CustomerID']
                             try: cust_credit = float(cust_row.get('Credit', 0) if cust_row.get('Credit') != "" else 0)
                             except: cust_credit = 0.0
+                            cust_is_wholesale = str(cust_row.get('IsWholesale', '')).strip().upper() == 'TRUE'
+                            # Per-customer tax rate override
+                            raw_cust_tax = str(cust_row.get('TaxRate', '')).strip()
+                            try:
+                                cust_tax_val = float(raw_cust_tax)
+                                new_eff_rate = (cust_tax_val / 100 if cust_tax_val > 1 else cust_tax_val) if cust_tax_val > 0 else tax_rate
+                            except (ValueError, TypeError):
+                                new_eff_rate = tax_rate
+                            # Rerun when customer changes so wholesale + tax rate update before checkbox renders
+                            if selected_cust_name != st.session_state.get('co_last_cust'):
+                                st.session_state['co_last_cust'] = selected_cust_name
+                                st.session_state['ck_wholesale'] = cust_is_wholesale
+                                st.session_state['co_effective_tax_rate'] = new_eff_rate
+                                st.rerun()
+                            if cust_is_wholesale:
+                                st.info("🏭 Wholesale customer — wholesale pricing auto-applied")
+                        else:
+                            if st.session_state.get('co_last_cust') is not None:
+                                st.session_state['co_last_cust'] = None
+                                st.session_state['co_effective_tax_rate'] = tax_rate
                     with cust_tab2:
                         with st.form("q_add"):
                             nn = st.text_input("Name"); ne = st.text_input("Email")
@@ -614,7 +664,7 @@ elif menu == "👥 Customers":
                     # Manage Button
                     with c_btn:
                         st.write("") # Vertical alignment spacer
-                        if st.button("Manage ➝", key=f"btn_m_{row['CustomerID']}"):
+                        if st.button("Manage ➝", key=f"btn_m_{i}_{row['CustomerID']}"):
                             st.session_state['active_cust_id'] = row['CustomerID']
                             st.rerun()
 
@@ -658,8 +708,29 @@ elif menu == "👥 Customers":
                         u_phone = st.text_input("Phone", value=str(row.get('Phone', "")))
                         u_addr = st.text_area("Address", value=str(row.get('Address', "")))
                         u_notes = st.text_area("Notes", value=str(row.get('Notes', "")))
+                        st.divider()
+                        u_wholesale = st.checkbox(
+                            "🏭 Wholesale Customer",
+                            value=str(row.get('IsWholesale', '')).strip().upper() == 'TRUE',
+                            help="Auto-applies wholesale pricing and no tax at checkout"
+                        )
+                        raw_cust_tax = str(row.get('TaxRate', '')).strip()
+                        try:
+                            stored_rate = float(raw_cust_tax)
+                            display_rate = stored_rate * 100 if stored_rate < 1.0 else stored_rate
+                        except (ValueError, TypeError):
+                            display_rate = 0.0
+                        u_tax_override = st.number_input(
+                            "Custom Tax Rate (% — 0 = use global default)",
+                            min_value=0.0, max_value=100.0,
+                            value=float(display_rate), step=0.001, format="%.3f",
+                            help="Overrides the global tax rate for this customer only."
+                        )
                         if st.form_submit_button("💾 Save Changes"):
-                            db.update_customer_details(cid, u_name, u_addr, u_phone, u_notes)
+                            tax_override_decimal = u_tax_override / 100.0 if u_tax_override > 0 else None
+                            db.update_customer_details(cid, u_name, u_addr, u_phone, u_notes,
+                                                       is_wholesale=u_wholesale,
+                                                       tax_rate_override=tax_override_decimal)
                             st.success("Saved!")
                             auto_refresh()
                     
@@ -710,8 +781,8 @@ elif menu == "👥 Customers":
                             except: amt = 0.0
                             c_a.write(f"**${amt:.2f}**")
 
-                            status = str(t_row['Status']).strip().title()
-                            is_paid = (status == "Paid")
+                            status_raw = str(t_row['Status']).strip()
+                            is_paid = status_raw.lower() == "paid"
                             if is_paid: c_s.success("Paid", icon="✅")
                             else: c_s.warning("Unpaid", icon="⏳")
 
@@ -799,19 +870,23 @@ elif menu == "📝 Reports":
             total_income = wholesale_sales + retail_sales
             
             # C. Calculate COGS
-            # Filter Items by the valid Transaction IDs
             valid_ids = f_trans['TransactionID'].astype(str).tolist()
             df_items['TransactionID'] = df_items['TransactionID'].astype(str)
             f_items = df_items[df_items['TransactionID'].isin(valid_ids)].copy()
-            
-            # Merge with Inventory to get 'Cost'
+            # Exclude non-product items (gift certificates have no inventory cost)
+            f_items = f_items[~f_items['SKU'].astype(str).str.upper().str.startswith('GIFT')]
+
             if 'inventory' in st.session_state['data']:
                 inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost']].copy()
                 inv_ref['SKU'] = inv_ref['SKU'].astype(str)
                 f_items['SKU'] = f_items['SKU'].astype(str)
                 merged_items = f_items.merge(inv_ref, on='SKU', how='left')
                 merged_items['QtySold'] = pd.to_numeric(merged_items['QtySold'], errors='coerce').fillna(0)
-                merged_items['LineCost'] = merged_items['QtySold'] * pd.to_numeric(merged_items['Cost'], errors='coerce').fillna(0)
+                merged_items['Cost'] = pd.to_numeric(merged_items['Cost'], errors='coerce')
+                no_cost_skus = merged_items[merged_items['Cost'].isna() | (merged_items['Cost'] == 0)]['SKU'].unique()
+                if len(no_cost_skus) > 0:
+                    st.warning(f"⚠️ COGS may be understated: {len(no_cost_skus)} SKU(s) sold in this period have no unit cost entered. Set costs in Inventory to improve accuracy.")
+                merged_items['LineCost'] = merged_items['QtySold'] * merged_items['Cost'].fillna(0)
                 total_cogs = merged_items['LineCost'].sum()
             else: total_cogs = 0.0
             
@@ -925,17 +1000,16 @@ elif menu == "📝 Reports":
             filtered_items['QtySold'] = pd.to_numeric(filtered_items['QtySold'], errors='coerce').fillna(0)
             filtered_items['Price'] = pd.to_numeric(filtered_items['Price'], errors='coerce').fillna(0)
             
-            # Merge with Inventory to get COST
+            # Merge with Inventory to get COST (exclude gift certificates)
+            filtered_items = filtered_items[~filtered_items['SKU'].astype(str).str.upper().str.startswith('GIFT')]
             if 'inventory' in st.session_state['data']:
                 inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost']].copy()
                 inv_ref['SKU'] = inv_ref['SKU'].astype(str)
                 filtered_items['SKU'] = filtered_items['SKU'].astype(str)
-                
-                # Merge
                 full_data = filtered_items.merge(inv_ref, on='SKU', how='left')
                 full_data['Cost'] = pd.to_numeric(full_data['Cost'], errors='coerce').fillna(0)
             else:
-                full_data = filtered_items
+                full_data = filtered_items.copy()
                 full_data['Cost'] = 0.0
 
             # Calculate Metrics
@@ -990,7 +1064,7 @@ elif menu == "📝 Reports":
         df_trans = st.session_state['data']['transactions']
         df_cust = st.session_state['data']['customers']
         df_items = st.session_state['data']['items']
-        pending = df_trans[df_trans['Status'] == 'Pending'].copy()
+        pending = df_trans[df_trans['Status'].astype(str).str.strip().str.lower().isin(['pending', 'unpaid'])].copy()
         if pending.empty: st.success("🎉 All invoices are paid!")
         else:
             if not df_cust.empty:

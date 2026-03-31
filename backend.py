@@ -65,13 +65,19 @@ def get_tax_rate() -> float:
 
 # --- LOGIC & WRITES ---
 
-def add_customer(name, email):
+def add_customer(name, email, is_wholesale=False):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Customers")
+    # Ensure IsWholesale and TaxRate column headers exist
+    headers = ws.row_values(1)
+    if 'IsWholesale' not in headers:
+        ws.update_cell(1, 9, 'IsWholesale')
+    if 'TaxRate' not in headers:
+        ws.update_cell(1, 10, 'TaxRate')
     new_id = f"C-{str(uuid.uuid4())[:5]}"
     date_joined = datetime.now().strftime("%Y-%m-%d")
-    ws.append_row([new_id, name, email, "", date_joined, "", "", 0.0])
+    ws.append_row([new_id, name, email, "", date_joined, "", "", 0.0, "TRUE" if is_wholesale else "FALSE", ""])
     return force_refresh()
 
 # UPDATED: Added cost parameter
@@ -194,11 +200,34 @@ def mark_invoice_paid(invoice_id):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Transactions")
+    invoice_id_str = str(invoice_id).strip()
+    # Try direct find first (fast path)
     try:
-        cell = ws.find(str(invoice_id))
+        cell = ws.find(invoice_id_str)
         ws.update_cell(cell.row, 6, "Paid")
         return force_refresh()
-    except: return False
+    except Exception:
+        pass
+    # Fallback: scan all rows to handle float-formatted IDs ("1001.0" vs "1001")
+    try:
+        all_rows = ws.get_all_values()
+        for row_idx, row_vals in enumerate(all_rows):
+            if row_idx == 0:  # skip header
+                continue
+            if not row_vals:
+                continue
+            cell_val = str(row_vals[0]).strip()
+            match = False
+            try:
+                match = float(cell_val) == float(invoice_id_str)
+            except (ValueError, TypeError):
+                match = cell_val == invoice_id_str
+            if match:
+                ws.update_cell(row_idx + 1, 6, "Paid")
+                return force_refresh()
+    except Exception:
+        pass
+    return False
 
 def delete_invoice(invoice_id):
     client = get_client()
@@ -212,7 +241,7 @@ def delete_invoice(invoice_id):
     except: pass
     return force_refresh()
 
-def update_customer_details(cust_id, new_name, address, phone, notes):
+def update_customer_details(cust_id, new_name, address, phone, notes, is_wholesale=None, tax_rate_override=None):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Customers")
@@ -222,8 +251,21 @@ def update_customer_details(cust_id, new_name, address, phone, notes):
         ws.update_cell(cell.row, 4, phone)
         ws.update_cell(cell.row, 6, address)
         ws.update_cell(cell.row, 7, notes)
+        if is_wholesale is not None or tax_rate_override is not None:
+            headers = ws.row_values(1)
+            if is_wholesale is not None:
+                if 'IsWholesale' not in headers:
+                    ws.update_cell(1, len(headers) + 1, 'IsWholesale')
+                    headers.append('IsWholesale')
+                ws.update_cell(cell.row, headers.index('IsWholesale') + 1, "TRUE" if is_wholesale else "FALSE")
+            if tax_rate_override is not None:
+                if 'TaxRate' not in headers:
+                    ws.update_cell(1, len(headers) + 1, 'TaxRate')
+                    headers.append('TaxRate')
+                val = str(tax_rate_override) if tax_rate_override else ""
+                ws.update_cell(cell.row, headers.index('TaxRate') + 1, val)
         return force_refresh()
-    except: return False
+    except Exception: return False
 
 def delete_customer(cust_id):
     client = get_client()
