@@ -142,8 +142,9 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
         except: pass
         due = str(r.get('DueDate', ''))
         t_date = r.get('Timestamp')
-    subtotal = sum(i['qty'] * i['price'] for i in cart)
-    return db.create_pdf(transaction_id, customer_name, addr, cart, subtotal, tax, total, due, transaction_date=t_date)
+    subtotal = sum(i['qty'] * i['price'] for i in cart if i.get('sku', '').upper() != 'FREIGHT')
+    cart_total = sum(i['qty'] * i['price'] for i in cart) + tax
+    return db.create_pdf(transaction_id, customer_name, addr, cart, subtotal, tax, cart_total, due, transaction_date=t_date)
 
 # --- HELPER: Edit Inventory Editor (shared by tab view + fullscreen) ---
 def _render_inv_editor(height=600):
