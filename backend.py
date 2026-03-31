@@ -157,6 +157,9 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
         except: pass
 
     # 2. Invoice ID
+    tz = pytz.timezone("America/Los_Angeles")
+    date_now = datetime.now(tz)
+    
     ws_set = sh.worksheet("Settings")
     try:
         cell = ws_set.find("NextInvoiceID")
@@ -164,9 +167,8 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
         ws_set.update_cell(cell.row, cell.col + 1, current_id + 1)
         invoice_id = str(current_id)
     except:
-        invoice_id = f"INV-{datetime.now().strftime('%H%M%S')}"
+        invoice_id = f"INV-{date_now.strftime('%H%M%S')}"
 
-    date_now = datetime.now()
     due_date = (date_now + timedelta(days=30 if is_wholesale else 0)).strftime("%Y-%m-%d")
     final_pay_method = f"{payment_method} (+${credit_used} Credit)" if credit_used > 0 else payment_method
     
@@ -283,16 +285,19 @@ def sell_gift_certificate(giver_id, receiver_id, amount, pay_method):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     
-    # Invoice ID
+    # 1. Invoice ID & Timestamp
+    tz = pytz.timezone("America/Los_Angeles")
+    date_now = datetime.now(tz)
+    
     ws_set = sh.worksheet("Settings")
     try:
         cell = ws_set.find("NextInvoiceID")
         current_id = int(ws_set.cell(cell.row, cell.col + 1).value)
         ws_set.update_cell(cell.row, cell.col + 1, current_id + 1)
         invoice_id = str(current_id)
-    except: invoice_id = f"INV-{datetime.now().strftime('%H%M%S')}"
+    except: 
+        invoice_id = f"INV-{date_now.strftime('%H%M%S')}"
 
-    date_now = datetime.now()
     ws_cust = sh.worksheet("Customers")
     try: receiver_name = ws_cust.cell(ws_cust.find(receiver_id).row, 2).value
     except: receiver_name = "Unknown"
