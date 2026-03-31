@@ -7,7 +7,7 @@ import streamlit.components.v1 as components
 # --- CONFIG (iPad Optimized - Refined) ---
 st.set_page_config(page_title="Kiosk | Notion to Sew", layout="wide", initial_sidebar_state="collapsed")
 
-# --- KEEP APP AWAKE: pings Streamlit health endpoint every 9 min so the app never sleeps ---
+# --- KEEP APP AWAKE ---
 components.html(
     """<script>
     setInterval(function() {
@@ -17,207 +17,231 @@ components.html(
     height=0
 )
 
+# --- CUSTOM CSS FOR A MODERN KIOSK FEEL ---
+st.markdown("""
+<style>
+    /* Global Styles */
+    .main {
+        background-color: #f8f9fa;
+    }
+    
+    /* Hero Banner */
+    .hero-container {
+        background: linear-gradient(135deg, #FF4B4B 0%, #ff8f8f 100%);
+        padding: 3rem 2rem;
+        border-radius: 1.5rem;
+        color: white;
+        text-align: center;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 25px rgba(255, 75, 75, 0.2);
+    }
+    .hero-title {
+        font-size: 3.5rem !important;
+        font-weight: 800 !important;
+        margin-bottom: 0.5rem !important;
+        letter-spacing: -1px;
+    }
+    .hero-subtitle {
+        font-size: 1.2rem !important;
+        opacity: 0.9;
+    }
+    
+    /* Search Box Styling */
+    div[data-baseweb="select"] {
+        border-radius: 1rem !important;
+    }
+    
+    /* Card Styling */
+    .stButton button {
+        border-radius: 0.8rem !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+    .stButton button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1) !important;
+    }
+    
+    /* Quick Add Section */
+    .quick-add-header {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+        color: #31333F;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    /* Metric / Cart Badge */
+    .cart-badge {
+        background-color: #FF4B4B;
+        color: white;
+        padding: 0.2rem 0.6rem;
+        border-radius: 50%;
+        font-size: 0.9rem;
+        font-weight: bold;
+        margin-left: 5px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # --- INIT ---
 if 'data' not in st.session_state or not st.session_state['data']:
     st.session_state['data'] = db.get_data()
-    if not st.session_state['data']:
-        st.warning("⚠️ Could not load data from Google Sheets.")
-        st.stop()
 if 'kiosk_cart' not in st.session_state: st.session_state['kiosk_cart'] = []
 if 'page' not in st.session_state: st.session_state['page'] = 'shop'
 if 'show_admin_login' not in st.session_state: st.session_state['show_admin_login'] = False
-
-# --- ADMIN FAB: detect click via query param ---
-if st.query_params.get("admin_open") == "1":
-    st.session_state['show_admin_login'] = True
-    st.query_params.clear()
-
-# --- ADMIN LOGIN DIALOG ---
-@st.dialog("Admin Sign In")
-def admin_login_dialog():
-    st.caption("Enter your PIN to open the Admin portal.")
-    pin = st.text_input("PIN", type="password", placeholder="Enter PIN", label_visibility="collapsed")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Unlock →", type="primary", use_container_width=True):
-            correct_pin = str(st.secrets.get("admin", {}).get("pin", "1234"))
-            if pin == correct_pin:
-                st.session_state['admin_authenticated'] = True
-                st.session_state['show_admin_login'] = False
-                st.switch_page("Home.py")
-            else:
-                st.error("Incorrect PIN")
-    with c2:
-        if st.button("Cancel", use_container_width=True):
-            st.session_state['show_admin_login'] = False
-            st.rerun()
-
-if st.session_state['show_admin_login']:
-    admin_login_dialog()
 
 # --- HELPERS ---
 def go_home(): st.session_state['page'] = 'shop'
 def go_checkout(): st.session_state['page'] = 'checkout'
 
 def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
-    """Generates an HTML button that opens the PDF in a new browser tab for direct printing."""
     try:
         b64 = base64.b64encode(pdf_bytes).decode()
-        # Primary Streamlit Red: #FF4B4B
         html = f"""
             <a href="data:application/pdf;base64,{b64}" target="_blank" style="text-decoration: none;">
-                <button style="
-                    width: 100%;
-                    background-color: #FF4B4B;
-                    color: white;
-                    padding: 0.5rem 1rem;
-                    border: none;
-                    border-radius: 0.5rem;
-                    cursor: pointer;
-                    font-weight: 500;
-                    font-size: 1rem;
-                    margin-top: 10px;
-                    margin-bottom: 10px;
-                ">
+                <button style="width: 100%; background-color: #FF4B4B; color: white; padding: 0.5rem 1rem; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; font-size: 1rem; margin-top: 10px; margin-bottom: 10px;">
                     {label}
                 </button>
             </a>
         """
         st.markdown(html, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Could not generate print link: {e}")
+    except: pass
 
-# --- STAFF ACCESS (hidden in collapsed sidebar — customers won't find it) ---
-with st.sidebar:
-    st.markdown("### 🔐 Staff Access")
+# --- ADMIN LOGIN LOGIC ---
+if st.query_params.get("admin_open") == "1":
+    st.session_state['show_admin_login'] = True
+    st.query_params.clear()
+
+@st.dialog("Admin Sign In")
+def admin_login_dialog():
     st.caption("Enter your PIN to open the Admin portal.")
-    pin_input = st.text_input("PIN", type="password", label_visibility="collapsed", placeholder="Enter PIN")
-    if st.button("Unlock Admin ➝", use_container_width=True):
-        correct_pin = str(st.secrets.get("admin", {}).get("pin", "1234"))
-        if pin_input == correct_pin:
+    pin = st.text_input("PIN", type="password", placeholder="Enter PIN", label_visibility="collapsed")
+    if st.button("Unlock →", type="primary", use_container_width=True):
+        if pin == str(st.secrets.get("admin", {}).get("pin", "1234")):
             st.session_state['admin_authenticated'] = True
             st.switch_page("Home.py")
-        else:
-            st.error("Incorrect PIN")
+        else: st.error("Incorrect PIN")
 
-# --- ADMIN FAB (anchor link — position:fixed works in main page, href survives Streamlit's HTML) ---
-st.markdown("""
-<style>
-#admin-fab {
-    position: fixed; top: 16px; right: 16px;
-    width: 42px; height: 42px; border-radius: 50%;
-    background: rgba(255,255,255,0.5);
-    border: 1px solid rgba(218,220,224,0.6);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; z-index: 99999;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-    opacity: 0.22; transition: opacity .25s, box-shadow .25s, background .25s;
-    text-decoration: none; line-height: 1;
-}
-#admin-fab:hover {
-    opacity: 0.85;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.18);
-    background: rgba(255,255,255,0.95);
-}
-</style>
-<a id="admin-fab" href="?admin_open=1" title="Admin Login">🔐</a>
-""", unsafe_allow_html=True)
+if st.session_state['show_admin_login']:
+    admin_login_dialog()
+
+# --- ADMIN FAB ---
+st.markdown('<a id="admin-fab" href="?admin_open=1" style="position:fixed; top:16px; right:16px; width:42px; height:42px; border-radius:50%; background:rgba(255,255,255,0.5); border:1px solid rgba(218,220,224,0.6); display:flex; align-items:center; justify-content:center; font-size:16px; z-index:99999; box-shadow:0 1px 4px rgba(0,0,0,0.08); backdrop-filter:blur(6px); opacity:0.22; text-decoration:none;">🔐</a>', unsafe_allow_html=True)
 
 # ==========================================
-# PAGE 1: THE SHOP
+# PAGE 1: THE SHOP (Beautiful Version)
 # ==========================================
 if st.session_state['page'] == 'shop':
     cart_count = sum(item['qty'] for item in st.session_state['kiosk_cart'])
 
-    # Top bar
-    c1, c2 = st.columns([5, 1])
-    with c1:
-        with st.container(border=True):
-            st.subheader("🧵 Notion to Sew")
-            st.caption("Type any item name or number below")
-    with c2:
-        st.write("")
-        st.write("")
-        if st.button(f"🛒 Cart ({cart_count})", type="primary", use_container_width=True):
-            go_checkout()
-            st.rerun()
+    # --- HERO SECTION ---
+    st.markdown("""
+        <div class="hero-container">
+            <div class="hero-title">🧵 Notion to Sew</div>
+            <div class="hero-subtitle">Quality Supplies for Your Creative Journey</div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    df = st.session_state['data']['inventory'].copy()
-    # Hide inactive items from kiosk search
-    if 'Active' in df.columns:
-        df = df[df['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
-    df['lookup'] = df.apply(lambda r: f"{r['SKU']} — {r['Name']} (${float(r['Price']):.2f})", axis=1)
-
-    _, search_col, _ = st.columns([1, 6, 1])
-    with search_col:
+    # --- SEARCH & CART ROW ---
+    c_search, c_cart = st.columns([4, 1.2], vertical_alignment="bottom")
+    
+    with c_search:
+        df = st.session_state['data']['inventory'].copy()
+        if 'Active' in df.columns:
+            df = df[df['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
+        df['lookup'] = df.apply(lambda r: f"{r['SKU']} — {r['Name']} (${float(r['Price']):.2f})", axis=1)
+        
         search_selection = st.selectbox(
-            "Search",
+            "Find Items",
             df['lookup'],
             index=None,
-            placeholder="🔍  Start typing a name or item number...",
+            placeholder="🔍  Search by name or item number...",
             label_visibility="collapsed",
             key="kiosk_item_search"
         )
 
+    with c_cart:
+        btn_label = f"🛒 View Cart ({cart_count})" if cart_count > 0 else "🛒 Cart Empty"
+        if st.button(btn_label, type="primary", use_container_width=True, disabled=cart_count == 0):
+            go_checkout()
+            st.rerun()
+
+    # --- SEARCH RESULT VIEW ---
     if search_selection:
-        sku = search_selection.split(" — ")[0]
-        mask = df['SKU'].astype(str).str.strip() == sku.strip()
-        row = df[mask].iloc[0]
-
-        if 'main_qty' not in st.session_state:
-            st.session_state['main_qty'] = 1
-
+        sku = search_selection.split(" — ")[0].strip()
+        row = df[df['SKU'].astype(str).str.strip() == sku].iloc[0]
+        
+        if 'main_qty' not in st.session_state: st.session_state['main_qty'] = 1
+        
         st.write("")
         with st.container(border=True):
-            cols = st.columns([3, 2, 2])
-
+            cols = st.columns([3, 2, 2], vertical_alignment="center")
             with cols[0]:
-                st.subheader(row['Name'])
+                st.markdown(f"### {row['Name']}")
                 st.caption(f"Item #: {row['SKU']}")
                 st.markdown(f"## ${row['Price']:.2f}")
-
             with cols[1]:
                 q1, q2, q3 = st.columns([1, 2, 1], vertical_alignment="center")
-                if q1.button("−", key="main_sub", use_container_width=True):
+                if q1.button("−", key="main_sub"):
                     if st.session_state['main_qty'] > 1:
                         st.session_state['main_qty'] -= 1
                         st.rerun()
-                q2.markdown(f"<div style='text-align:center;font-size:2rem;font-weight:500'>{st.session_state['main_qty']}</div>", unsafe_allow_html=True)
-                if q3.button("＋", key="main_add", use_container_width=True):
+                q2.markdown(f"<div style='text-align:center;font-size:2rem;font-weight:600'>{st.session_state['main_qty']}</div>", unsafe_allow_html=True)
+                if q3.button("＋", key="main_add"):
                     st.session_state['main_qty'] += 1
                     st.rerun()
-
             with cols[2]:
-                st.write("")
-                
                 def add_to_cart_kiosk(k_sku, k_name, k_price, k_qty):
-                    # Check if SKU already in cart
                     for item in st.session_state['kiosk_cart']:
                         if item['sku'] == k_sku:
                             item['qty'] += k_qty
                             st.session_state['main_qty'] = 1
                             st.session_state['kiosk_item_search'] = None
                             return
-                    
-                    st.session_state['kiosk_cart'].append({
-                        "sku": k_sku, "name": k_name,
-                        "price": k_price, "qty": k_qty
-                    })
+                    st.session_state['kiosk_cart'].append({"sku": k_sku, "name": k_name, "price": k_price, "qty": k_qty})
                     st.session_state['main_qty'] = 1
                     st.session_state['kiosk_item_search'] = None
 
-                st.button("Add to Cart", type="primary", use_container_width=True,
+                st.button("✨ Add to Cart", type="primary", use_container_width=True,
                           on_click=add_to_cart_kiosk, args=(row['SKU'], row['Name'], row['Price'], st.session_state['main_qty']))
                 st.toast(f"Added {st.session_state['main_qty']} × {row['Name']}")
+
+    # --- QUICK ADD SECTION (Top Sellers / Popular Items) ---
     else:
-        # Friendly idle prompt when nothing is selected
-        st.write("")
-        st.info("Not sure what to search? Ask our staff for help — we're happy to assist! 😊")
+        st.markdown('<div class="quick-add-header">🔥 Popular Today</div>', unsafe_allow_html=True)
+        # Filter for some popular items (or just first 4 for now)
+        popular_items = df.head(4) 
+        
+        p_cols = st.columns(4)
+        for i, (idx, p_row) in enumerate(popular_items.iterrows()):
+            with p_cols[i]:
+                with st.container(border=True):
+                    st.markdown(f"**{p_row['Name'][:25]}...**" if len(p_row['Name']) > 25 else f"**{p_row['Name']}**")
+                    st.write(f"${p_row['Price']:.2f}")
+                    if st.button("Add ＋", key=f"quick_add_{i}", use_container_width=True):
+                        # Simple one-click add
+                        found = False
+                        for item in st.session_state['kiosk_cart']:
+                            if str(item['sku']) == str(p_row['SKU']):
+                                item['qty'] += 1
+                                found = True; break
+                        if not found:
+                            st.session_state['kiosk_cart'].append({"sku": p_row['SKU'], "name": p_row['Name'], "price": p_row['Price'], "qty": 1})
+                        st.toast(f"Added {p_row['Name']}")
+                        st.rerun()
+
+    # Friendly idle prompt
+    st.write("")
+    st.write("")
+    c1, c2 = st.columns([1, 1])
+    c1.info("💡 **Need help?** Just ask our friendly staff — we are here to assist with your project!")
+    c2.info("💳 **Payment:** We accept Cash, Venmo, and major Credit Cards at checkout.")
 
 # ==========================================
-# PAGE 2: CHECKOUT
+# PAGE 2: CHECKOUT (Retained from previous update)
 # ==========================================
 elif st.session_state['page'] == 'checkout':
     st.title("Checkout")
@@ -398,25 +422,15 @@ elif st.session_state['page'] == 'checkout':
                         st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
-    # --- FOOTER SPACER (For Mobile Keyboard Clearance) ---
-    st.write("<br><br><br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
+    # --- FOOTER SPACER ---
+    st.write("<br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
     st.caption("Notion to Sew · Kiosk v1.2")
 
 # ==========================================
 # PAGE 3: SUCCESS
 # ==========================================
 elif st.session_state['page'] == 'success':
-    # --- AUTO-TIMEOUT: Return to home after 2 minutes of inactivity ---
-    components.html(
-        """
-        <script>
-        setTimeout(function() {
-            window.parent.location.assign(window.parent.location.origin + window.parent.location.pathname);
-        }, 120000);
-        </script>
-        """,
-        height=0
-    )
+    components.html("""<script>setTimeout(function() { window.parent.location.assign(window.parent.location.origin + window.parent.location.pathname); }, 120000);</script>""", height=0)
     
     order = st.session_state.get('last_kiosk_order', {})
     c1, c2, c3 = st.columns([1, 2, 1])
@@ -426,42 +440,35 @@ elif st.session_state['page'] == 'success':
             st.subheader(f"Order #{order.get('id', '')} · ${order.get('total', 0):.2f}")
         
         st.write("")
-        
-        # --- NEW: EMAIL RECEIPT SECTION ---
         with st.container(border=True):
             st.subheader("📧 Email Receipt")
             if order.get('email_sent'):
                 st.success(f"Receipt sent to **{order.get('receipt_email')}**")
             else:
-                email_input = st.text_input("Enter Email", value=order.get('customer_email', ''), placeholder="customer@example.com")
-                
-                def send_receipt_action(email_addr, order_data):
+                st.text_input("Enter Email", value=order.get('customer_email', ''), placeholder="customer@example.com", key="kiosk_receipt_email")
+                def send_receipt_action(order_data):
+                    email_addr = st.session_state.get("kiosk_receipt_email", "").strip()
+                    if not email_addr:
+                        st.session_state['email_error_msg'] = "Please enter a valid email address."
+                        return
                     try:
-                        db.send_receipt_email(email_addr.strip(), order_data['id'], order_data['pdf'])
+                        db.send_receipt_email(email_addr, order_data['id'], order_data['pdf'])
                         st.session_state['last_kiosk_order']['email_sent'] = True
-                        st.session_state['last_kiosk_order']['receipt_email'] = email_addr.strip()
-                    except Exception as e:
-                        st.error(f"Failed to send email: {e}")
-
-                st.button("Send Receipt ➝", type="primary", use_container_width=True, 
-                          on_click=send_receipt_action, args=(email_input, order))
+                        st.session_state['last_kiosk_order']['receipt_email'] = email_addr
+                    except Exception as e: st.session_state['email_error_msg'] = str(e)
+                st.button("Send Receipt ➝", type="primary", use_container_width=True, on_click=send_receipt_action, args=(order,))
+                if 'email_error_msg' in st.session_state:
+                    st.error(f"Failed to send email: {st.session_state['email_error_msg']}")
+                    del st.session_state['email_error_msg']
 
         st.write("")
         with st.container(border=True):
             st.subheader("🖨️ In-Store Print")
-            # Staff can still download or print the PDF
             if order.get('pdf'):
                 _get_pdf_print_button(order['pdf'], label="Open / Print Receipt Now")
-                st.download_button(
-                    "💾 Save PDF to Device",
-                    data=order['pdf'],
-                    file_name=f"Receipt_{order.get('id', 'order')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
+                st.download_button("💾 Save PDF to Device", data=order['pdf'], file_name=f"Receipt_{order.get('id', 'order')}.pdf", mime="application/pdf", use_container_width=True)
 
             st.write("")
             if st.button("🏠 Start New Order", type="primary", use_container_width=True):
                 st.session_state['last_kiosk_order'] = None
-                go_home()
-                st.rerun()
+                go_home(); st.rerun()
