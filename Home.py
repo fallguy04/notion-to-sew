@@ -714,6 +714,7 @@ elif menu == "👥 Customers":
                 my_trans = my_trans.sort_values(by="Timestamp", ascending=False)
 
             # --- MAIN CONTENT ---
+            preview_slot = st.empty()
             col1, col2 = st.columns([1, 1.5])
             
             # LEFT: Edit Profile & Credit
@@ -822,24 +823,26 @@ elif menu == "👥 Customers":
                                 st.warning("Deleted.")
                                 auto_refresh()
 
-                        # --- INLINE PREVIEWER (Now part of the same loop for better UX) ---
-                        if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
-                            with st.container(border=True):
-                                if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
-                                    st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
-                                    st.rerun()
-                                t_id = str(t_row['TransactionID'])
-                                pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
-                                st.download_button(
-                                    "🖨️ Download / Print Invoice",
-                                    data=pdf_bytes,
-                                    file_name=f"Invoice_{t_id}.pdf",
-                                    mime="application/pdf",
-                                    key=f"dl_{t_id}_{i}",
-                                    type="primary",
-                                    use_container_width=True
-                                )
-                                pdf_viewer(input=pdf_bytes, width=1000, height=1000)
+            # --- RENDER ACTIVE PREVIEW TO SLOT (Full width, above columns) ---
+            if not my_trans.empty:
+                for i, t_row in my_trans.iterrows():
+                    if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
+                        with preview_slot.container(border=True):
+                            if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
+                                st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
+                                st.rerun()
+                            t_id = str(t_row['TransactionID'])
+                            pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
+                            st.download_button(
+                                "🖨️ Download / Print Invoice",
+                                data=pdf_bytes,
+                                file_name=f"Invoice_{t_id}.pdf",
+                                mime="application/pdf",
+                                key=f"dl_{t_id}_{i}",
+                                type="primary",
+                                use_container_width=True
+                            )
+                            pdf_viewer(input=pdf_bytes, width=None, rendering="unwrap")
 
 # ==========================================
 # 5. REPORTS
