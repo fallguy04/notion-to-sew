@@ -119,7 +119,7 @@ if st.session_state['page'] == 'shop':
     # Hide inactive items from kiosk search
     if 'Active' in df.columns:
         df = df[df['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
-    df['lookup'] = df['SKU'].astype(str) + " — " + df['Name']
+    df['lookup'] = df.apply(lambda r: f"{r['SKU']} — {r['Name']} (${float(r['Price']):.2f})", axis=1)
 
     _, search_col, _ = st.columns([1, 6, 1])
     with search_col:
@@ -128,7 +128,8 @@ if st.session_state['page'] == 'shop':
             df['lookup'],
             index=None,
             placeholder="🔍  Start typing a name or item number...",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key="kiosk_item_search"
         )
 
     if search_selection:
@@ -168,6 +169,7 @@ if st.session_state['page'] == 'shop':
                     })
                     st.toast(f"Added {st.session_state['main_qty']} × {row['Name']}")
                     st.session_state['main_qty'] = 1
+                    st.session_state['kiosk_item_search'] = None
                     st.rerun()
     else:
         # Friendly idle prompt when nothing is selected

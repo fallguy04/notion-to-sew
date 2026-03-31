@@ -460,8 +460,11 @@ elif menu == "🛒 Checkout":
             # Hide inactive items from checkout search
             if 'Active' in inv.columns:
                 inv = inv[inv['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
-            inv['lookup'] = inv['SKU'].astype(str) + " | " + inv['Name']
-            selected_item_str = st.selectbox("Search Item", inv['lookup'], index=None)
+            
+            # Show price in lookup
+            inv['lookup'] = inv.apply(lambda r: f"{r['SKU']} | {r['Name']} (${float(r['WholesalePrice'] if is_wholesale and float(r.get('WholesalePrice', 0) or 0) > 0 else r['Price']):.2f})", axis=1)
+            
+            selected_item_str = st.selectbox("Search Item", inv['lookup'], index=None, key="checkout_item_search")
             
             if selected_item_str:
                 sku_str = selected_item_str.split(" | ")[0].strip()
@@ -479,6 +482,7 @@ elif menu == "🛒 Checkout":
                         st.session_state['cart'].append({
                             "sku": sku_str, "name": item_row['Name'], "qty": qty, "price": final_price, "total": qty * final_price
                         })
+                        st.session_state['checkout_item_search'] = None
                         st.rerun()
 
         # RIGHT: Cart & Pay
