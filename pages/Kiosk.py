@@ -418,6 +418,18 @@ elif st.session_state['page'] == 'checkout':
 # PAGE 3: SUCCESS
 # ==========================================
 elif st.session_state['page'] == 'success':
+    # --- AUTO-TIMEOUT: Return to home after 2 minutes of inactivity ---
+    components.html(
+        """
+        <script>
+        setTimeout(function() {
+            window.parent.location.assign(window.parent.location.origin + window.parent.location.pathname);
+        }, 120000);
+        </script>
+        """,
+        height=0
+    )
+    
     order = st.session_state.get('last_kiosk_order', {})
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
