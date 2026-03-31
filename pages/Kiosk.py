@@ -410,6 +410,10 @@ elif st.session_state['page'] == 'checkout':
                         st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
 
+    # --- FOOTER SPACER (For Mobile Keyboard Clearance) ---
+    st.write("<br><br><br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
+    st.caption("Notion to Sew · Kiosk v1.2")
+
 # ==========================================
 # PAGE 3: SUCCESS
 # ==========================================
