@@ -9,6 +9,7 @@ import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
+import pytz
 from fpdf import FPDF
 
 # --- CONNECTIVITY ---
@@ -330,15 +331,34 @@ def add_expense(date, category, amount, description):
     return force_refresh()
 
 # --- PDF GENERATOR ---
-def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0):
+def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0, transaction_date=None):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 20); pdf.cell(0, 10, "Notion to Sew", ln=True)
     pdf.set_font("Helvetica", "", 10)
     for line in company_address.split("\n"): pdf.cell(0, 5, line.strip(), ln=True)
     pdf.ln(10)
+
+    # Handle Date and Timezone (Los Angeles)
+    tz = pytz.timezone("America/Los_Angeles")
+    if transaction_date:
+        # If transaction_date is a string, we assume it's already in the correct format or try to parse it
+        # If it's datetime, we use it.
+        if isinstance(transaction_date, str):
+            try: 
+                display_date = datetime.strptime(transaction_date, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d")
+            except: 
+                try: display_date = datetime.strptime(transaction_date, "%Y-%m-%d").strftime("%Y-%m-%d")
+                except: display_date = transaction_date # Fallback to original string
+        elif isinstance(transaction_date, datetime):
+            display_date = transaction_date.strftime("%Y-%m-%d")
+        else:
+            display_date = str(transaction_date)
+    else:
+        display_date = datetime.now(tz).strftime("%Y-%m-%d")
+
     pdf.set_font("Helvetica", "B", 12); pdf.cell(0, 10, f"INVOICE #{invoice_id}", ln=True, align='R')
-    pdf.set_font("Helvetica", "", 10); pdf.cell(0, 5, f"Date: {datetime.now().strftime('%Y-%m-%d')}", ln=True, align='R')
+    pdf.set_font("Helvetica", "", 10); pdf.cell(0, 5, f"Date: {display_date}", ln=True, align='R')
     pdf.cell(0, 5, f"Due: {due_date}", ln=True, align='R'); pdf.ln(5)
     pdf.set_font("Helvetica", "B", 10); pdf.cell(0, 5, f"Bill To: {customer_name}", ln=True); pdf.ln(10)
     

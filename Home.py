@@ -104,7 +104,7 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
     trans_df = data['transactions'].copy()
     trans_df['TransactionID'] = trans_df['TransactionID'].apply(_normalize_tid)
     t = trans_df[trans_df['TransactionID'] == norm_id]
-    tax, total, due = 0.0, 0.0, ""
+    tax, total, due, t_date = 0.0, 0.0, "", None
     if not t.empty:
         r = t.iloc[0]
         try: tax = float(r['TaxAmount'] or 0)
@@ -112,8 +112,9 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
         try: total = float(r['TotalAmount'] or 0)
         except: pass
         due = str(r.get('DueDate', ''))
+        t_date = r.get('Timestamp')
     subtotal = sum(i['qty'] * i['price'] for i in cart)
-    return db.create_pdf(transaction_id, customer_name, addr, cart, subtotal, tax, total, due)
+    return db.create_pdf(transaction_id, customer_name, addr, cart, subtotal, tax, total, due, transaction_date=t_date)
 
 # --- HELPER: Edit Inventory Editor (shared by tab view + fullscreen) ---
 def _render_inv_editor(height=600):
@@ -842,7 +843,7 @@ elif menu == "👥 Customers":
                                 type="primary",
                                 use_container_width=True
                             )
-                            pdf_viewer(input=pdf_bytes, width=None, rendering="unwrap")
+                            pdf_viewer(input=pdf_bytes, width="100%")
 
 # ==========================================
 # 5. REPORTS
