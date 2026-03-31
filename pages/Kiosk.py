@@ -193,6 +193,14 @@ if st.session_state['page'] == 'shop':
                 st.write("")
                 
                 def add_to_cart_kiosk(k_sku, k_name, k_price, k_qty):
+                    # Check if SKU already in cart
+                    for item in st.session_state['kiosk_cart']:
+                        if item['sku'] == k_sku:
+                            item['qty'] += k_qty
+                            st.session_state['main_qty'] = 1
+                            st.session_state['kiosk_item_search'] = None
+                            return
+                    
                     st.session_state['kiosk_cart'].append({
                         "sku": k_sku, "name": k_name,
                         "price": k_price, "qty": k_qty
@@ -218,189 +226,189 @@ elif st.session_state['page'] == 'checkout':
         st.rerun()
     
     st.divider()
-    c_left, c_right = st.columns([1.5, 1])
-    
-    # LEFT: Cart
-    with c_left:
-        st.subheader("Your Items")
-        if not st.session_state['kiosk_cart']:
-            st.info("Cart is empty.")
-        else:
-            for i, item in enumerate(st.session_state['kiosk_cart']):
-                with st.container(border=True):
-                    cl1, cl2, cl3 = st.columns([3, 1, 1])
-                    cl1.write(f"**{item['name']}**\n{item['qty']} @ ${item['price']:.2f}")
-                    cl2.write(f"**${item['qty'] * item['price']:.2f}**")
-                    if cl3.button("🗑️", key=f"del_{i}"):
-                        st.session_state['kiosk_cart'].pop(i)
-                        st.rerun()
 
-    # RIGHT: Pay
-    with c_right:
-        with st.container(border=True):
-            st.subheader("Total")
-            # Tax Logic
-            if 'settings' in st.session_state['data']:
-                s_df = st.session_state['data']['settings']
-                settings_cache = dict(zip(s_df['Key'], s_df['Value']))
-                raw_rate = settings_cache.get("TaxRate", "0.08")
-                venmo_user = settings_cache.get("VenmoUser", "")
-            else:
-                raw_rate = "0.08"
-                venmo_user = ""
+    # --- STEP 1: WHO IS CHECKING OUT? ---
+    st.subheader("👤 Step 1: Who is checking out?")
+    cust_tab1, cust_tab2 = st.tabs(["Search Name", "New Customer"])
+    selected_cust_name = None
+    cust_row = None
 
+    with cust_tab1:
+        cust_df = st.session_state['data']['customers']
+        selected_cust_name = st.selectbox("Name", cust_df['Name'], index=None, placeholder="Search customer name...", label_visibility="collapsed")
+        if selected_cust_name:
+            cust_row = cust_df[cust_df['Name'] == selected_cust_name].iloc[0]
+
+    with cust_tab2:
+        with st.form("new_kiosk_cust"):
+            n_name = st.text_input("Name")
+            n_email = st.text_input("Email")
+            if st.form_submit_button("Join & Select"):
+                if n_name:
+                    db.add_customer(n_name, n_email)
+                    db.force_refresh()
+                    st.session_state['data'] = db.get_data()
+                    st.rerun()
+                else: st.error("Name required.")
+
+    st.divider()
+
+    # --- STEP 2: YOUR ITEMS ---
+    st.subheader("🛒 Step 2: Your Items")
+    if not st.session_state['kiosk_cart']:
+        st.info("Cart is empty.")
+    else:
+        # Tax and Price Overrides pre-calculation
+        if 'settings' in st.session_state['data']:
+            s_df = st.session_state['data']['settings']
+            settings_cache = dict(zip(s_df['Key'], s_df['Value']))
+            raw_rate = settings_cache.get("TaxRate", "0.08")
+            venmo_user = settings_cache.get("VenmoUser", "")
+        else: raw_rate = "0.08"; venmo_user = ""
+
+        try:
+            clean_rate = float(str(raw_rate).replace("%", "").strip())
+            if clean_rate > 1: clean_rate = clean_rate / 100
+        except: clean_rate = 0.0
+
+        cust_credit = 0.0
+        cust_is_wholesale = False
+        cust_tax_override = None
+        cust_id = "Guest"
+
+        if cust_row is not None:
+            cust_id = cust_row['CustomerID']
+            try: cust_credit = float(cust_row.get('Credit', 0) if cust_row.get('Credit') != "" else 0)
+            except: cust_credit = 0.0
+            cust_is_wholesale = str(cust_row.get('IsWholesale', '')).strip().upper() == 'TRUE'
+            raw_cust_tax = str(cust_row.get('TaxRate', '')).strip()
             try:
-                clean_rate = float(str(raw_rate).replace("%", "").strip())
-                # If rate is > 1 (e.g. 8.0), divide by 100. If < 1 (e.g. 0.08), keep it.
-                if clean_rate > 1: clean_rate = clean_rate / 100
-            except: clean_rate = 0.0
+                cust_tax_val = float(raw_cust_tax)
+                if cust_tax_val > 0:
+                    cust_tax_override = cust_tax_val / 100 if cust_tax_val > 1 else cust_tax_val
+            except (ValueError, TypeError): pass
 
-            # Customer & Credit Logic
-            cust_tab1, cust_tab2 = st.tabs(["Search Name", "New Customer"])
-            selected_cust = None
-            cust_credit = 0.0
-            cust_is_wholesale = False
-            cust_tax_override = None
+        if cust_tax_override is not None:
+            clean_rate = cust_tax_override
 
-            with cust_tab1:
-                cust_df = st.session_state['data']['customers']
-                cust_list = cust_df['Name']
-                selected_cust = st.selectbox("Name", cust_list, index=None, placeholder="Select...", label_visibility="collapsed")
-
-                if selected_cust:
-                    cust_row = cust_df[cust_df['Name'] == selected_cust].iloc[0]
-                    try: cust_credit = float(cust_row.get('Credit', 0) if cust_row.get('Credit') != "" else 0)
-                    except: cust_credit = 0.0
-                    cust_is_wholesale = str(cust_row.get('IsWholesale', '')).strip().upper() == 'TRUE'
-                    raw_cust_tax = str(cust_row.get('TaxRate', '')).strip()
-                    try:
-                        cust_tax_val = float(raw_cust_tax)
-                        if cust_tax_val > 0:
-                            cust_tax_override = cust_tax_val / 100 if cust_tax_val > 1 else cust_tax_val
-                    except (ValueError, TypeError):
-                        pass
-
-            with cust_tab2:
-                with st.form("new_kiosk_cust"):
-                    n_name = st.text_input("Name")
-                    n_email = st.text_input("Email")
-                    if st.form_submit_button("Join"):
-                        db.add_customer(n_name, n_email)
-                        del st.session_state['data']
-                        st.rerun()
-
-            # Apply customer-specific overrides
-            if cust_tax_override is not None:
-                clean_rate = cust_tax_override
-
-            # Build checkout_cart: use wholesale prices for wholesale customers
-            inv_df = st.session_state['data']['inventory']
-            checkout_cart = []
-            for item in st.session_state['kiosk_cart']:
+        # Render Items
+        inv_df = st.session_state['data']['inventory']
+        checkout_cart = []
+        for i, item in enumerate(st.session_state['kiosk_cart']):
+            with st.container(border=True):
+                c_desc, c_qty_edit, c_line_total, c_del = st.columns([3, 2, 1.5, 0.5])
+                
+                # Determine effective price
                 eff_price = item['price']
                 if cust_is_wholesale:
                     inv_rows = inv_df[inv_df['SKU'].astype(str) == str(item['sku'])]
                     if not inv_rows.empty:
                         ws_p = float(inv_rows.iloc[0].get('WholesalePrice', 0) or 0)
-                        if ws_p > 0:
-                            eff_price = ws_p
-                checkout_cart.append({**item, 'price': eff_price})
+                        if ws_p > 0: eff_price = ws_p
+                
+                c_desc.write(f"**{item['name']}**")
+                c_desc.caption(f"Item #: {item['sku']} | Price: ${eff_price:.2f}")
 
-            subtotal = sum(i['qty'] * i['price'] for i in checkout_cart)
-            tax_amt = 0.0 if cust_is_wholesale else subtotal * clean_rate
-            total = subtotal + tax_amt
+                # Edit Qty
+                def update_qty(idx, new_val):
+                    if new_val > 0:
+                        st.session_state['kiosk_cart'][idx]['qty'] = new_val
+                    else:
+                        st.session_state['kiosk_cart'].pop(idx)
 
+                new_q = c_qty_edit.number_input("Qty", 1, 1000, value=int(item['qty']), key=f"edit_q_{i}")
+                if new_q != item['qty']:
+                    update_qty(i, new_q)
+                    st.rerun()
+
+                line_tot = new_q * eff_price
+                c_line_total.write(f"**${line_tot:.2f}**")
+                
+                if c_del.button("🗑️", key=f"del_{i}"):
+                    st.session_state['kiosk_cart'].pop(i)
+                    st.rerun()
+                
+                checkout_cart.append({**item, 'price': eff_price, 'qty': new_q})
+
+        st.divider()
+
+        # --- STEP 3: TOTAL & PAYMENT ---
+        st.subheader("💰 Step 3: Total & Payment")
+        
+        subtotal = sum(i['qty'] * i['price'] for i in checkout_cart)
+        tax_amt = 0.0 if cust_is_wholesale else subtotal * clean_rate
+        total = subtotal + tax_amt
+
+        col_tot1, col_tot2 = st.columns([1, 1])
+        with col_tot1:
             if cust_is_wholesale:
                 st.info("🏭 Wholesale customer — wholesale pricing applied, no tax")
             st.write(f"Subtotal: ${subtotal:.2f}")
             st.write(f"Tax: ${tax_amt:.2f}")
 
             credit_applied = 0.0
-            if selected_cust and cust_credit > 0:
+            if cust_row is not None and cust_credit > 0:
                 st.info(f"💎 You have **${cust_credit:.2f}** in store credit!")
                 if st.checkbox("Apply Credit?"):
                     max_apply = min(cust_credit, total)
-                    credit_applied = max_apply # Kiosk usually auto-applies max for simplicity, or we can add input
+                    credit_applied = max_apply 
                     st.write(f"Credit Applied: -${credit_applied:.2f}")
 
             final_total = max(0.0, total - credit_applied)
-            st.markdown(f"# ${final_total:.2f}")
+            st.markdown(f"## Total Due: ${final_total:.2f}")
 
-            st.divider()
-
+        with col_tot2:
             # Email Receipt
-            default_email = ""
-            if selected_cust:
-                try:
-                    default_email = str(cust_row.get('Email', '') or '')
-                except: pass
-            receipt_email = st.text_input(
-                "📧 Email Receipt To (optional)",
-                value=default_email,
-                placeholder="customer@example.com"
-            )
+            default_email = str(cust_row.get('Email', '') or '') if cust_row is not None else ""
+            receipt_email = st.text_input("📧 Email Receipt To (optional)", value=default_email, placeholder="customer@example.com")
 
             # Payment
             pay_method = st.radio("Payment Method", ["Cash", "Venmo", "Pay Later (Invoice)"], horizontal=True)
             
+            # --- GUEST CASH CHECKOUT PROTECTION ---
+            if not selected_cust_name and pay_method == "Cash":
+                st.error("⚠️ Guest checkout is only allowed for Venmo or Pay Later. Please select or create a customer for Cash sales.")
+                can_finish = False
+            else:
+                can_finish = True
+
             if pay_method == "Venmo":
                 if venmo_user:
-                    st.success(f"Scanning for @{venmo_user}")
-                    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://venmo.com/u/{venmo_user}"
-                    st.image(qr_url, caption=f"Scan to pay ${final_total:.2f}", width=200)
-                else:
-                    st.warning("No Venmo account set in Admin Settings!")
+                    st.image(f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://venmo.com/u/{venmo_user}", width=150)
+                else: st.warning("Venmo account not set!")
 
-            if st.button("✅ Finish Sale", type="primary", use_container_width=True):
-                if selected_cust or pay_method == "Cash":
-                    try:
-                        cust_id = cust_row['CustomerID'] if selected_cust else "Guest"
-                        cust_display = selected_cust or "Guest"
-                        status = "Pending" if pay_method == "Pay Later (Invoice)" else "Paid"
+            if st.button("✅ Finish Sale", type="primary", use_container_width=True, disabled=not can_finish):
+                try:
+                    cust_display = selected_cust_name or "Guest"
+                    status = "Pending" if pay_method == "Pay Later (Invoice)" else "Paid"
 
-                        with st.spinner("Processing..."):
-                            new_id = db.commit_sale(
-                                checkout_cart, final_total, tax_amt, cust_id,
-                                pay_method, cust_is_wholesale, status, credit_used=credit_applied
-                            )
+                    with st.spinner("Processing..."):
+                        new_id = db.commit_sale(
+                            checkout_cart, final_total, tax_amt, cust_id,
+                            pay_method, cust_is_wholesale, status, credit_used=credit_applied
+                        )
 
-                            # PDF Generation
-                            if 'settings' in st.session_state['data']:
-                                s_df = st.session_state['data']['settings']
-                                s_dict = dict(zip(s_df['Key'], s_df['Value']))
-                                address = s_dict.get("Address", "Modesto, CA")
-                            else: address = "Modesto, CA"
+                        address = db.get_settings_dict().get("Address", "Modesto, CA")
+                        pdf_bytes = db.create_pdf(new_id, cust_display, address, checkout_cart, subtotal, tax_amt, final_total, "Upon Receipt", credit_applied=credit_applied, transaction_date=None)
 
-                            pdf_bytes = db.create_pdf(new_id, cust_display, address, checkout_cart, subtotal, tax_amt, final_total, "Upon Receipt", credit_applied=credit_applied)
+                        email_sent = False
+                        email_error = None
+                        if receipt_email.strip():
+                            try:
+                                db.send_receipt_email(receipt_email.strip(), new_id, pdf_bytes)
+                                email_sent = True
+                            except Exception as e: email_error = str(e)
 
-                            # Send Email Receipt
-                            email_sent = False
-                            email_error = None
-                            if receipt_email.strip():
-                                try:
-                                    db.send_receipt_email(receipt_email.strip(), new_id, pdf_bytes)
-                                    email_sent = True
-                                except Exception as e:
-                                    email_error = str(e)
-
-                            # Store Success Data
-                            st.session_state['last_kiosk_order'] = {
-                                'id': new_id,
-                                'pdf': pdf_bytes,
-                                'customer': selected_cust,
-                                'receipt_email': receipt_email.strip(),
-                                'email_sent': email_sent,
-                                'email_error': email_error,
-                                'total': final_total,
-                            }
-                            st.session_state['kiosk_cart'] = []
-                            st.session_state['page'] = 'success'
-                            db.force_refresh()
-                            st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Please select a customer, or choose Cash for a guest sale.")
+                        st.session_state['last_kiosk_order'] = {
+                            'id': new_id, 'pdf': pdf_bytes, 'customer': cust_display,
+                            'receipt_email': receipt_email.strip(), 'email_sent': email_sent,
+                            'email_error': email_error, 'total': final_total,
+                        }
+                        st.session_state['kiosk_cart'] = []
+                        st.session_state['page'] = 'success'
+                        db.force_refresh()
+                        st.rerun()
+                except Exception as e: st.error(f"Error: {e}")
 
 # ==========================================
 # PAGE 3: SUCCESS
