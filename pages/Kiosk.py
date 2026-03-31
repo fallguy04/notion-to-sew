@@ -225,7 +225,7 @@ if st.session_state['page'] == 'shop':
                         st.rerun()
 
     st.write("")
-    st.info("💡 **Need help?** Ask our friendly staff — we are happy to assist!")
+    st.info("💡 **Need help?** Please ask — we are happy to assist!")
 
 # ==========================================
 # PAGE 2: CHECKOUT
