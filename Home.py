@@ -570,6 +570,9 @@ elif menu == "🛒 Checkout":
                     )
                     effective_tax_rate = st.session_state['co_effective_tax_rate'] if cust_has_custom_rate else tax_rate
 
+                    # --- FREIGHT ---
+                    freight = st.number_input("Freight / Shipping ($)", 0.0, 500.0, 0.0, step=0.05, key="freight_charge")
+
                     # --- BULK DISCOUNT ---
                     bulk_discount_pct = st.number_input("Bulk Discount (%)", 0.0, 100.0, 0.0, step=1.0)
                     discount_amount = subtotal * (bulk_discount_pct / 100.0)
@@ -577,7 +580,7 @@ elif menu == "🛒 Checkout":
 
                     apply_tax = st.checkbox(f"Apply Tax ({(effective_tax_rate*100):.3f}%)", value=not is_wholesale)
                     tax_amt = discounted_subtotal * effective_tax_rate if apply_tax else 0.0
-                    cart_total = discounted_subtotal + tax_amt
+                    cart_total = discounted_subtotal + tax_amt + freight
 
                     # CUSTOMER & CREDIT LOGIC
                     cust_tab1, cust_tab2 = st.tabs(["Existing", "New"])
@@ -652,10 +655,20 @@ elif menu == "🛒 Checkout":
                                     st.session_state['cart'], cart_total, tax_amt, cust_id, 
                                     pay_method, is_wholesale, status, credit_used=credit_applied
                                 )
+                                
+                                # Record Freight if applicable
+                                if freight > 0:
+                                    db.record_freight(new_id, freight)
+
                                 # Generate PDF
                                 address = db.get_settings_dict().get("Address", "Modesto, CA")
                                 
-                                pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied, discount_amount=discount_amount)
+                                # Add freight to cart for line items table display
+                                checkout_cart_pdf = st.session_state['cart'].copy()
+                                if freight > 0:
+                                    checkout_cart_pdf.append({"sku": "FREIGHT", "name": "Shipping", "qty": 1, "price": freight})
+
+                                pdf_bytes = db.create_pdf(new_id, selected_cust, address, checkout_cart_pdf, subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied, discount_amount=discount_amount, freight_amount=freight)
                                 
                                 # Store State
                                 st.session_state['last_order'] = {
@@ -959,16 +972,49 @@ elif menu == "📝 Reports":
             # Net Sales = Total - Tax
             f_trans['NetSale'] = f_trans['TotalAmount'] - f_trans['TaxAmount']
             
-            wholesale_sales = f_trans[ws_mask]['NetSale'].sum()
-            retail_sales = f_trans[~ws_mask]['NetSale'].sum()
-            total_income = wholesale_sales + retail_sales
-            
-            # C. Calculate COGS
+            # C. Freight Income & Adjusted Product Revenue
             valid_ids = f_trans['TransactionID'].astype(str).tolist()
             df_items['TransactionID'] = df_items['TransactionID'].astype(str)
-            f_items = df_items[df_items['TransactionID'].isin(valid_ids)].copy()
-            # Exclude non-product items (gift certificates have no inventory cost)
-            f_items = f_items[~f_items['SKU'].astype(str).str.upper().str.startswith('GIFT')]
+            f_items_all = df_items[df_items['TransactionID'].isin(valid_ids)].copy()
+            f_items_all['QtySold'] = pd.to_numeric(f_items_all['QtySold'], errors='coerce').fillna(0)
+            f_items_all['Price'] = pd.to_numeric(f_items_all['Price'], errors='coerce').fillna(0)
+            f_items_all['LineTotal'] = f_items_all['QtySold'] * f_items_all['Price']
+            
+            freight_mask = f_items_all['SKU'].astype(str).str.upper() == 'FREIGHT'
+            freight_income = f_items_all[freight_mask]['LineTotal'].sum()
+            
+            # Since NetSale (Total - Tax) includes freight, we subtract freight_income from the sum 
+            # to get the product revenue part, then split by IsWholesale.
+            # Actually, more accurately, we can split NetSale and then subtract transaction-specific freight, 
+            # but for the summary, subtracting the total freight_income from the totals is equivalent.
+            
+            total_net_sale = f_trans['NetSale'].sum()
+            total_product_revenue = total_net_sale - freight_income
+            
+            # Split product revenue proportionally or just by mask on NetSale and adjust
+            # PRO-TIP: It's cleaner to calculate freight per transaction if we want exact split, 
+            # but usually Freight is retail. Let's just subtract it from the overall total_income 
+            # and report it separately.
+            
+            wholesale_sales = f_trans[ws_mask]['NetSale'].sum()
+            retail_sales = f_trans[~ws_mask]['NetSale'].sum()
+            
+            # Adjustment: Subtract freight from retail/wholesale sums. 
+            # Usually freight is tagged to the transaction type.
+            ws_freight = f_items_all[freight_mask & f_items_all['TransactionID'].isin(f_trans[ws_mask]['TransactionID'])]['LineTotal'].sum()
+            rt_freight = freight_income - ws_freight
+            
+            wholesale_sales -= ws_freight
+            retail_sales -= rt_freight
+            
+            total_income = wholesale_sales + retail_sales + freight_income
+            
+            # D. Calculate COGS
+            # Exclude non-product items (gift certificates and FREIGHT have no inventory cost)
+            f_items = f_items_all[
+                (~f_items_all['SKU'].astype(str).str.upper().str.startswith('GIFT')) &
+                (~f_items_all['SKU'].astype(str).str.upper().str.contains('FREIGHT'))
+            ].copy()
 
             if 'inventory' in st.session_state['data']:
                 inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost']].copy()
@@ -1017,6 +1063,7 @@ elif menu == "📝 Reports":
             # E. Generate PDF
             financials = {
                 'retail_sales': retail_sales, 'wholesale_sales': wholesale_sales,
+                'freight_income': freight_income,
                 'total_income': total_income, 'cogs': total_cogs,
                 'gross_profit': gross_profit, 'expenses_breakdown': expenses_breakdown,
                 'total_expenses': total_expenses, 'net_profit': net_profit
@@ -1076,7 +1123,17 @@ elif menu == "📝 Reports":
         mask = (df['DateObj'] >= st_start) & (df['DateObj'] <= st_end)
         filtered_df = df[mask]
         total_tax = pd.to_numeric(filtered_df['TaxAmount'], errors='coerce').sum()
-        taxable_sales = pd.to_numeric(filtered_df['TotalAmount'], errors='coerce').sum() - total_tax
+        
+        # Calculate total freight for this period to exclude from taxable sales
+        df_items = st.session_state['data']['items']
+        df_items['TransactionID'] = df_items['TransactionID'].astype(str)
+        valid_ids = filtered_df['TransactionID'].astype(str).tolist()
+        f_items_period = df_items[df_items['TransactionID'].isin(valid_ids)]
+        f_items_period['QtySold'] = pd.to_numeric(f_items_period['QtySold'], errors='coerce').fillna(0)
+        f_items_period['Price'] = pd.to_numeric(f_items_period['Price'], errors='coerce').fillna(0)
+        total_freight_period = (f_items_period[f_items_period['SKU'].astype(str).str.upper() == 'FREIGHT']['QtySold'] * f_items_period[f_items_period['SKU'].astype(str).str.upper() == 'FREIGHT']['Price']).sum()
+
+        taxable_sales = pd.to_numeric(filtered_df['TotalAmount'], errors='coerce').sum() - total_tax - total_freight_period
         m1, m2 = st.columns(2)
         m1.metric("Tax Collected", f"${total_tax:,.2f}"); m2.metric("Taxable Sales", f"${taxable_sales:,.2f}")
 
@@ -1109,8 +1166,11 @@ elif menu == "📝 Reports":
             filtered_items['QtySold'] = pd.to_numeric(filtered_items['QtySold'], errors='coerce').fillna(0)
             filtered_items['Price'] = pd.to_numeric(filtered_items['Price'], errors='coerce').fillna(0)
             
-            # Merge with Inventory to get COST (exclude gift certificates)
-            filtered_items = filtered_items[~filtered_items['SKU'].astype(str).str.upper().str.startswith('GIFT')]
+            # Merge with Inventory to get COST (exclude gift certificates and freight)
+            filtered_items = filtered_items[
+                (~filtered_items['SKU'].astype(str).str.upper().str.startswith('GIFT')) &
+                (~filtered_items['SKU'].astype(str).str.upper().str.contains('FREIGHT'))
+            ]
             if 'inventory' in st.session_state['data']:
                 inv_ref = st.session_state['data']['inventory'][['SKU', 'Cost']].copy()
                 inv_ref['SKU'] = inv_ref['SKU'].astype(str)

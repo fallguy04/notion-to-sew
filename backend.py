@@ -202,6 +202,13 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
     force_refresh()
     return invoice_id
 
+def record_freight(invoice_id, amount):
+    """Appends a freight line item to TransactionItems."""
+    client = get_client()
+    sh = client.open("NotionToSew_DB")
+    sh.worksheet("TransactionItems").append_row([invoice_id, "FREIGHT", 1, amount, "Shipping"])
+    return True
+
 def mark_invoice_paid(invoice_id):
     client = get_client()
     sh = client.open("NotionToSew_DB")
@@ -339,7 +346,7 @@ def add_expense(date, category, amount, description):
     return force_refresh()
 
 # --- PDF GENERATOR ---
-def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0, transaction_date=None, discount_amount=0.0):
+def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0, transaction_date=None, discount_amount=0.0, freight_amount=0.0):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 20); pdf.cell(0, 10, "Notion to Sew", ln=True)
@@ -385,6 +392,10 @@ def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, 
     if discount_amount > 0:
         pdf.cell(165, 6, "Bulk Discount:", 0, 0, 'R'); pdf.cell(25, 6, f"-${discount_amount:.2f}", 0, 1, 'R')
         pdf.cell(165, 6, "Discounted Subtotal:", 0, 0, 'R'); pdf.cell(25, 6, f"${subtotal - discount_amount:.2f}", 0, 1, 'R')
+    
+    if freight_amount > 0:
+        pdf.cell(165, 6, "Freight:", 0, 0, 'R'); pdf.cell(25, 6, f"${freight_amount:.2f}", 0, 1, 'R')
+
     pdf.cell(165, 6, "Tax:", 0, 0, 'R'); pdf.cell(25, 6, f"${tax:.2f}", 0, 1, 'R')
     if credit_applied > 0:
         pdf.cell(165, 6, "Store Credit Used:", 0, 0, 'R'); pdf.cell(25, 6, f"-${credit_applied:.2f}", 0, 1, 'R')
@@ -463,6 +474,9 @@ def generate_income_statement_pdf(start_date, end_date, financials):
     add_line("Retail Sales (Taxable)", financials['retail_sales'], indent=1)
     add_line("Wholesale Sales (Non-Taxable)", financials['wholesale_sales'], indent=1)
     
+    if financials.get('freight_income', 0) > 0:
+        add_line("Freight Income", financials['freight_income'], indent=1)
+
     pdf.ln(1)
     add_line("Total Revenue:", financials['total_income'], bold=True, indent=0)
     pdf.ln(3)
