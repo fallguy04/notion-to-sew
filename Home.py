@@ -570,9 +570,14 @@ elif menu == "🛒 Checkout":
                     )
                     effective_tax_rate = st.session_state['co_effective_tax_rate'] if cust_has_custom_rate else tax_rate
 
+                    # --- BULK DISCOUNT ---
+                    bulk_discount_pct = st.number_input("Bulk Discount (%)", 0.0, 100.0, 0.0, step=1.0)
+                    discount_amount = subtotal * (bulk_discount_pct / 100.0)
+                    discounted_subtotal = subtotal - discount_amount
+
                     apply_tax = st.checkbox(f"Apply Tax ({(effective_tax_rate*100):.3f}%)", value=not is_wholesale)
-                    tax_amt = subtotal * effective_tax_rate if apply_tax else 0.0
-                    cart_total = subtotal + tax_amt
+                    tax_amt = discounted_subtotal * effective_tax_rate if apply_tax else 0.0
+                    cart_total = discounted_subtotal + tax_amt
 
                     # CUSTOMER & CREDIT LOGIC
                     cust_tab1, cust_tab2 = st.tabs(["Existing", "New"])
@@ -618,7 +623,11 @@ elif menu == "🛒 Checkout":
                             credit_applied = st.number_input("Amount to apply", 0.0, max_apply, max_apply)
                     
                     final_due = max(0.0, cart_total - credit_applied)
-                    st.write(f"Subtotal: ${subtotal:.2f}"); st.write(f"Tax: ${tax_amt:.2f}")
+                    st.write(f"Subtotal: ${subtotal:.2f}")
+                    if bulk_discount_pct > 0:
+                        st.write(f"Bulk Discount ({bulk_discount_pct}%): -${discount_amount:.2f}")
+                        st.write(f"Discounted Subtotal: ${discounted_subtotal:.2f}")
+                    st.write(f"Tax: ${tax_amt:.2f}")
                     if credit_applied > 0: st.write(f"Store Credit: -${credit_applied:.2f}")
                     st.markdown(f"### Total: ${final_due:.2f}")
                     st.divider()
@@ -641,7 +650,7 @@ elif menu == "🛒 Checkout":
                                 # Generate PDF
                                 address = db.get_settings_dict().get("Address", "Modesto, CA")
                                 
-                                pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied)
+                                pdf_bytes = db.create_pdf(new_id, selected_cust, address, st.session_state['cart'], subtotal, tax_amt, cart_total, "Upon Receipt", credit_applied=credit_applied, discount_amount=discount_amount)
                                 
                                 # Store State
                                 st.session_state['last_order'] = {

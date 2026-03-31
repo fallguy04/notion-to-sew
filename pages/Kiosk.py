@@ -358,10 +358,6 @@ elif st.session_state['page'] == 'checkout':
             st.markdown(f"## Total Due: ${final_total:.2f}")
 
         with col_tot2:
-            # Email Receipt
-            default_email = str(cust_row.get('Email', '') or '') if cust_row is not None else ""
-            receipt_email = st.text_input("📧 Email Receipt To (optional)", value=default_email, placeholder="customer@example.com")
-
             # Payment
             pay_method = st.radio("Payment Method", ["Cash", "Venmo", "Pay Later (Invoice)"], horizontal=True)
             
@@ -391,18 +387,10 @@ elif st.session_state['page'] == 'checkout':
                         address = db.get_settings_dict().get("Address", "Modesto, CA")
                         pdf_bytes = db.create_pdf(new_id, cust_display, address, checkout_cart, subtotal, tax_amt, final_total, "Upon Receipt", credit_applied=credit_applied, transaction_date=None)
 
-                        email_sent = False
-                        email_error = None
-                        if receipt_email.strip():
-                            try:
-                                db.send_receipt_email(receipt_email.strip(), new_id, pdf_bytes)
-                                email_sent = True
-                            except Exception as e: email_error = str(e)
-
                         st.session_state['last_kiosk_order'] = {
                             'id': new_id, 'pdf': pdf_bytes, 'customer': cust_display,
-                            'receipt_email': receipt_email.strip(), 'email_sent': email_sent,
-                            'email_error': email_error, 'total': final_total,
+                            'customer_email': str(cust_row.get('Email', '') or '') if cust_row is not None else "",
+                            'email_sent': False, 'email_error': None, 'total': final_total,
                         }
                         st.session_state['kiosk_cart'] = []
                         st.session_state['page'] = 'success'
@@ -436,29 +424,36 @@ elif st.session_state['page'] == 'success':
         with st.container(border=True):
             st.markdown("# ✅ Thank You!")
             st.subheader(f"Order #{order.get('id', '')} · ${order.get('total', 0):.2f}")
+        
+        st.write("")
+        
+        # --- NEW: EMAIL RECEIPT SECTION ---
+        with st.container(border=True):
+            st.subheader("📧 Email Receipt")
+            if order.get('email_sent'):
+                st.success(f"Receipt sent to **{order.get('receipt_email')}**")
+            else:
+                email_input = st.text_input("Enter Email", value=order.get('customer_email', ''), placeholder="customer@example.com")
+                
+                def send_receipt_action(email_addr, order_data):
+                    try:
+                        db.send_receipt_email(email_addr.strip(), order_data['id'], order_data['pdf'])
+                        st.session_state['last_kiosk_order']['email_sent'] = True
+                        st.session_state['last_kiosk_order']['receipt_email'] = email_addr.strip()
+                    except Exception as e:
+                        st.error(f"Failed to send email: {e}")
+
+                st.button("Send Receipt ➝", type="primary", use_container_width=True, 
+                          on_click=send_receipt_action, args=(email_input, order))
+
         st.write("")
         with st.container(border=True):
-
-            # Email status
-            receipt_email = order.get('receipt_email', '')
-            if receipt_email:
-                if order.get('email_sent'):
-                    st.success(f"📧 Receipt emailed to **{receipt_email}**")
-                else:
-                    st.warning(f"⚠️ Could not send email to **{receipt_email}**")
-                    if order.get('email_error'):
-                        st.caption(f"Error detail: {order['email_error']}")
-                    st.caption("Please ask staff for a printed copy.")
-            else:
-                st.info("No email provided — ask staff for a printed receipt if needed.")
-
-            st.write("")
-
+            st.subheader("🖨️ In-Store Print")
             # Staff can still download or print the PDF
             if order.get('pdf'):
-                _get_pdf_print_button(order['pdf'])
+                _get_pdf_print_button(order['pdf'], label="Open / Print Receipt Now")
                 st.download_button(
-                    "💾 Save Receipt",
+                    "💾 Save PDF to Device",
                     data=order['pdf'],
                     file_name=f"Receipt_{order.get('id', 'order')}.pdf",
                     mime="application/pdf",

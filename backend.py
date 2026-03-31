@@ -333,7 +333,7 @@ def add_expense(date, category, amount, description):
     return force_refresh()
 
 # --- PDF GENERATOR ---
-def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0, transaction_date=None):
+def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0, transaction_date=None, discount_amount=0.0):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 20); pdf.cell(0, 10, "Notion to Sew", ln=True)
@@ -363,25 +363,27 @@ def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, 
     pdf.set_font("Helvetica", "", 10); pdf.cell(0, 5, f"Date: {display_date}", ln=True, align='R')
     pdf.cell(0, 5, f"Due: {due_date}", ln=True, align='R'); pdf.ln(5)
     pdf.set_font("Helvetica", "B", 10); pdf.cell(0, 5, f"Bill To: {customer_name}", ln=True); pdf.ln(10)
-    
+
     pdf.set_fill_color(240, 240, 240); pdf.set_font("Helvetica", "B", 9)
     pdf.cell(35, 8, "Part #", 1, 0, 'L', 1); pdf.cell(85, 8, "Description", 1, 0, 'L', 1)
     pdf.cell(20, 8, "Qty", 1, 0, 'C', 1); pdf.cell(25, 8, "Price", 1, 0, 'R', 1); pdf.cell(25, 8, "Total", 1, 1, 'R', 1)
-    
+
     pdf.set_font("Helvetica", "", 9)
     for item in cart:
         pdf.cell(35, 8, str(item['sku'])[:18], 1); pdf.cell(85, 8, str(item['name'])[:45], 1)
         pdf.cell(20, 8, str(item['qty']), 1, 0, 'C'); pdf.cell(25, 8, f"${item['price']:.2f}", 1, 0, 'R')
         pdf.cell(25, 8, f"${item['qty']*item['price']:.2f}", 1, 1, 'R')
-        
+
     pdf.ln(5); pdf.set_font("Helvetica", "", 10)
     pdf.cell(165, 6, "Subtotal:", 0, 0, 'R'); pdf.cell(25, 6, f"${subtotal:.2f}", 0, 1, 'R')
+    if discount_amount > 0:
+        pdf.cell(165, 6, "Bulk Discount:", 0, 0, 'R'); pdf.cell(25, 6, f"-${discount_amount:.2f}", 0, 1, 'R')
+        pdf.cell(165, 6, "Discounted Subtotal:", 0, 0, 'R'); pdf.cell(25, 6, f"${subtotal - discount_amount:.2f}", 0, 1, 'R')
     pdf.cell(165, 6, "Tax:", 0, 0, 'R'); pdf.cell(25, 6, f"${tax:.2f}", 0, 1, 'R')
     if credit_applied > 0:
         pdf.cell(165, 6, "Store Credit Used:", 0, 0, 'R'); pdf.cell(25, 6, f"-${credit_applied:.2f}", 0, 1, 'R')
     pdf.set_font("Helvetica", "B", 12); pdf.cell(165, 8, "AMOUNT DUE:", 0, 0, 'R'); pdf.cell(25, 8, f"${max(0.0, total - credit_applied):.2f}", 0, 1, 'R')
     return pdf.output(dest='S').encode('latin-1')
-
 # --- EMAIL RECEIPT ---
 def send_receipt_email(to_email: str, invoice_id: str, pdf_bytes: bytes):
     """Sends the PDF receipt as an email attachment via Gmail SMTP.
