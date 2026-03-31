@@ -82,6 +82,16 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
     items_df = data['items'].copy()
     items_df['TransactionID'] = items_df['TransactionID'].apply(_normalize_tid)
     inv_items = items_df[items_df['TransactionID'] == norm_id]
+    
+    # --- RACE CONDITION FIX: Refresh if items not yet in cache ---
+    if inv_items.empty:
+        db.force_refresh()
+        st.session_state['data'] = db.get_data()
+        data = st.session_state['data']
+        items_df = data['items'].copy()
+        items_df['TransactionID'] = items_df['TransactionID'].apply(_normalize_tid)
+        inv_items = items_df[items_df['TransactionID'] == norm_id]
+
     cart = []
     for _, item in inv_items.iterrows():
         try: q, p = int(item['QtySold']), float(item['Price'])
@@ -812,26 +822,24 @@ elif menu == "👥 Customers":
                                 st.warning("Deleted.")
                                 auto_refresh()
 
-            # Full-width receipt previewer (outside column layout so it uses the full page width)
-            if not my_trans.empty:
-                for i, t_row in my_trans.iterrows():
-                    if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
-                        with st.container(border=True):
-                            if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
-                                st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
-                                st.rerun()
-                            t_id = str(t_row['TransactionID'])
-                            pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
-                            st.download_button(
-                                "🖨️ Download / Print Invoice",
-                                data=pdf_bytes,
-                                file_name=f"Invoice_{t_id}.pdf",
-                                mime="application/pdf",
-                                key=f"dl_{t_id}_{i}",
-                                type="primary",
-                                use_container_width=True
-                            )
-                            pdf_viewer(input=pdf_bytes, width=1000, height=1000)
+                        # --- INLINE PREVIEWER (Now part of the same loop for better UX) ---
+                        if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
+                            with st.container(border=True):
+                                if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
+                                    st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
+                                    st.rerun()
+                                t_id = str(t_row['TransactionID'])
+                                pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
+                                st.download_button(
+                                    "🖨️ Download / Print Invoice",
+                                    data=pdf_bytes,
+                                    file_name=f"Invoice_{t_id}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_{t_id}_{i}",
+                                    type="primary",
+                                    use_container_width=True
+                                )
+                                pdf_viewer(input=pdf_bytes, width=1000, height=1000)
 
 # ==========================================
 # 5. REPORTS
