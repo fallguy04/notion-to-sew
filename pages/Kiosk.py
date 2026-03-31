@@ -162,15 +162,18 @@ if st.session_state['page'] == 'shop':
 
             with cols[2]:
                 st.write("")
-                if st.button("Add to Cart", type="primary", use_container_width=True):
+                
+                def add_to_cart_kiosk(k_sku, k_name, k_price, k_qty):
                     st.session_state['kiosk_cart'].append({
-                        "sku": row['SKU'], "name": row['Name'],
-                        "price": row['Price'], "qty": st.session_state['main_qty']
+                        "sku": k_sku, "name": k_name,
+                        "price": k_price, "qty": k_qty
                     })
-                    st.toast(f"Added {st.session_state['main_qty']} × {row['Name']}")
                     st.session_state['main_qty'] = 1
                     st.session_state['kiosk_item_search'] = None
-                    st.rerun()
+
+                st.button("Add to Cart", type="primary", use_container_width=True,
+                          on_click=add_to_cart_kiosk, args=(row['SKU'], row['Name'], row['Price'], st.session_state['main_qty']))
+                st.toast(f"Added {st.session_state['main_qty']} × {row['Name']}")
     else:
         # Friendly idle prompt when nothing is selected
         st.write("")

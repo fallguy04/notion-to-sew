@@ -478,12 +478,14 @@ elif menu == "🛒 Checkout":
                     qty = c_qty.number_input("Quantity", 1, 1000, 1)
                     final_price = c_price.number_input("Unit Price ($)", 0.0, 10000.0, float(base_price))
                     
-                    if st.button("Add to Cart", type="primary", use_container_width=True):
+                    def add_to_cart_admin(s_sku, s_name, s_qty, s_price):
                         st.session_state['cart'].append({
-                            "sku": sku_str, "name": item_row['Name'], "qty": qty, "price": final_price, "total": qty * final_price
+                            "sku": s_sku, "name": s_name, "qty": s_qty, "price": s_price, "total": s_qty * s_price
                         })
                         st.session_state['checkout_item_search'] = None
-                        st.rerun()
+
+                    st.button("Add to Cart", type="primary", use_container_width=True, 
+                              on_click=add_to_cart_admin, args=(sku_str, item_row['Name'], qty, final_price))
 
         # RIGHT: Cart & Pay
         with c2:
