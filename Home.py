@@ -454,14 +454,27 @@ elif menu == "🛒 Checkout":
         # LEFT: Add Item
         with c1:
             st.subheader("Add Item")
-            is_wholesale = st.checkbox("Apply Wholesale Pricing?", key='ck_wholesale')
+            
+            # Use a stable key for the widget and sync with a value key
+            if 'ck_wholesale_val' not in st.session_state:
+                st.session_state['ck_wholesale_val'] = False
+                
+            is_wholesale = st.checkbox("Apply Wholesale Pricing?", value=st.session_state['ck_wholesale_val'], key='ck_wholesale_widget')
+            
+            # Sync value back to our state key if user clicks it
+            st.session_state['ck_wholesale_val'] = is_wholesale
+            
             inv = st.session_state['data']['inventory'].copy()
             cust = st.session_state['data']['customers']
             # Hide inactive items from checkout search
             if 'Active' in inv.columns:
                 inv = inv[inv['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
-            
+
+            # --- SORT BY SKU ---
+            inv = inv.sort_values(by='SKU')
+
             # Show price in lookup
+
             inv['lookup'] = inv.apply(lambda r: f"{r['SKU']} | {r['Name']} (${float(r['WholesalePrice'] if is_wholesale and float(r.get('WholesalePrice', 0) or 0) > 0 else r['Price']):.2f})", axis=1)
             
             selected_item_str = st.selectbox("Search Item", inv['lookup'], index=None, key="checkout_item_search")
@@ -552,7 +565,7 @@ elif menu == "🛒 Checkout":
                             # Rerun when customer changes so wholesale + tax rate update before checkbox renders
                             if selected_cust_name != st.session_state.get('co_last_cust'):
                                 st.session_state['co_last_cust'] = selected_cust_name
-                                st.session_state['ck_wholesale'] = cust_is_wholesale
+                                st.session_state['ck_wholesale_val'] = cust_is_wholesale
                                 st.session_state['co_effective_tax_rate'] = new_eff_rate
                                 st.rerun()
                             if cust_is_wholesale:
@@ -672,11 +685,8 @@ elif menu == "👥 Customers":
         if filtered_df.empty:
             st.info("No customers found.")
         else:
-            # Pagination / Limit for speed
-            MAX_ITEMS = 50
-            if len(filtered_df) > MAX_ITEMS:
-                st.caption(f"Showing first {MAX_ITEMS} of {len(filtered_df)} customers. Refine search to see more.")
-                filtered_df = filtered_df.head(MAX_ITEMS)
+            # Sort customers alphabetically by name
+            filtered_df = filtered_df.sort_values(by="Name")
             
             for i, row in filtered_df.iterrows():
                 # Create a card-like container
