@@ -471,6 +471,7 @@ elif menu == "🛒 Checkout":
                 inv = inv[inv['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
 
             # --- SORT BY SKU ---
+            inv['SKU'] = inv['SKU'].astype(str)
             inv = inv.sort_values(by='SKU')
 
             # Show price in lookup
