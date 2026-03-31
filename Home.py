@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import backend as db
+import base64
 from datetime import datetime, date
 from streamlit_pdf_viewer import pdf_viewer
 from streamlit_extras.colored_header import colored_header
@@ -73,6 +74,34 @@ def _normalize_tid(tid) -> str:
         return str(int(float(s)))
     except (ValueError, TypeError):
         return s
+
+def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
+    """Generates an HTML button that opens the PDF in a new browser tab for direct printing."""
+    try:
+        b64 = base64.b64encode(pdf_bytes).decode()
+        # Primary Streamlit Red: #FF4B4B
+        html = f"""
+            <a href="data:application/pdf;base64,{b64}" target="_blank" style="text-decoration: none;">
+                <button style="
+                    width: 100%;
+                    background-color: #FF4B4B;
+                    color: white;
+                    padding: 0.5rem 1rem;
+                    border: none;
+                    border-radius: 0.5rem;
+                    cursor: pointer;
+                    font-weight: 500;
+                    font-size: 1rem;
+                    margin-top: 10px;
+                    margin-bottom: 10px;
+                ">
+                    {label}
+                </button>
+            </a>
+        """
+        st.markdown(html, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Could not generate print link: {e}")
 
 # --- HELPER: Build PDF from stored transaction ---
 def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
@@ -419,16 +448,17 @@ elif menu == "🛒 Checkout":
         if c1.button("👁️ View Invoice", use_container_width=True):
             st.session_state['view_last_invoice'] = True
         
-        # 2. Download Invoice
+        # 2. Download & Print
         pdf_data = st.session_state['last_order']['pdf']
-        c2.download_button(
-            "📄 Download PDF", 
-            data=pdf_data, 
-            file_name=f"Invoice_{st.session_state['last_order']['id']}.pdf", 
-            mime="application/pdf",
-            use_container_width=True
-        )
-        
+        with c2:
+            _get_pdf_print_button(pdf_data)
+            st.download_button(
+                "📄 Download PDF",
+                data=pdf_data,
+                file_name=f"Invoice_{st.session_state['last_order']['id']}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
         # 3. New Sale
         if c3.button("✨ New Sale", type="primary", use_container_width=True):
             st.session_state['checkout_complete'] = False
@@ -864,8 +894,9 @@ elif menu == "👥 Customers":
                                 st.rerun()
                             t_id = str(t_row['TransactionID'])
                             pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
+                            _get_pdf_print_button(pdf_bytes)
                             st.download_button(
-                                "🖨️ Download / Print Invoice",
+                                "🖨️ Download PDF",
                                 data=pdf_bytes,
                                 file_name=f"Invoice_{t_id}.pdf",
                                 mime="application/pdf",

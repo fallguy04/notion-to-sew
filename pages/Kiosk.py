@@ -1,6 +1,7 @@
 import streamlit as st
 import backend as db
 import pandas as pd
+import base64
 import streamlit.components.v1 as components
 
 # --- CONFIG (iPad Optimized - Refined) ---
@@ -58,6 +59,34 @@ if st.session_state['show_admin_login']:
 # --- HELPERS ---
 def go_home(): st.session_state['page'] = 'shop'
 def go_checkout(): st.session_state['page'] = 'checkout'
+
+def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
+    """Generates an HTML button that opens the PDF in a new browser tab for direct printing."""
+    try:
+        b64 = base64.b64encode(pdf_bytes).decode()
+        # Primary Streamlit Red: #FF4B4B
+        html = f"""
+            <a href="data:application/pdf;base64,{b64}" target="_blank" style="text-decoration: none;">
+                <button style="
+                    width: 100%;
+                    background-color: #FF4B4B;
+                    color: white;
+                    padding: 0.5rem 1rem;
+                    border: none;
+                    border-radius: 0.5rem;
+                    cursor: pointer;
+                    font-weight: 500;
+                    font-size: 1rem;
+                    margin-top: 10px;
+                    margin-bottom: 10px;
+                ">
+                    {label}
+                </button>
+            </a>
+        """
+        st.markdown(html, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Could not generate print link: {e}")
 
 # --- STAFF ACCESS (hidden in collapsed sidebar — customers won't find it) ---
 with st.sidebar:
@@ -401,10 +430,11 @@ elif st.session_state['page'] == 'success':
 
             st.write("")
 
-            # Staff can still download the PDF
+            # Staff can still download or print the PDF
             if order.get('pdf'):
+                _get_pdf_print_button(order['pdf'])
                 st.download_button(
-                    "🖨️ Download Receipt",
+                    "💾 Save Receipt",
                     data=order['pdf'],
                     file_name=f"Receipt_{order.get('id', 'order')}.pdf",
                     mime="application/pdf",
