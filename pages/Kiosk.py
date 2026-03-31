@@ -361,9 +361,9 @@ elif st.session_state['page'] == 'checkout':
             # Payment
             pay_method = st.radio("Payment Method", ["Cash", "Venmo", "Pay Later (Invoice)"], horizontal=True)
             
-            # --- GUEST CASH CHECKOUT PROTECTION ---
-            if not selected_cust_name and pay_method == "Cash":
-                st.error("⚠️ Guest checkout is only allowed for Venmo or Pay Later. Please select or create a customer for Cash sales.")
+            # --- CUSTOMER SELECTION PROTECTION (NO GUESTS ALLOWED) ---
+            if not selected_cust_name:
+                st.error("⚠️ Please search for your name or create a new profile in Step 1 to complete your order.")
                 can_finish = False
             else:
                 can_finish = True
