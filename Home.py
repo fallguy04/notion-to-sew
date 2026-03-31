@@ -351,14 +351,27 @@ elif menu == "📦 Inventory":
                 c5, c6 = st.columns(2)
                 new_stock = c5.number_input("Opening Stock", 0, 10000, 0)
                 new_cost = c6.number_input("Unit Cost ($)", 0.0, 1000.0, 0.0)
-                
+
+                st.divider()
+                log_purchase_new = st.checkbox("📒 Also log as Inventory Purchase expense?", value=True,
+                                           key="new_item_log_purchase",
+                                           help="Records total purchase cost in Expenses for accurate P&L reporting")
+                ex_c1_n, ex_c2_n = st.columns(2)
+                ex_date_n = ex_c1_n.date_input("Purchase Date", value=date.today(), key="new_item_ex_date")
+                ex_desc_n = ex_c2_n.text_input("Description", value=f"Initial Purchase for {lookup_sku}", key="new_item_ex_desc")
+
                 if st.form_submit_button("✅ Create Item", type="primary"):
                     if new_name:
                         db.add_inventory_item(lookup_sku, new_name, new_price, new_stock, new_whol, new_cost)
-                        st.success("Item Created!")
+
+                        if log_purchase_new and new_cost > 0 and new_stock > 0:
+                            total_purchase = new_stock * new_cost
+                            db.add_expense(ex_date_n, "Inventory Purchase", total_purchase, ex_desc_n)
+                            st.success(f"Item Created and logged ${total_purchase:.2f} inventory purchase expense!")
+                        else:
+                            st.success("Item Created!")
                         auto_refresh()
                     else: st.error("Name required.")
-
     # --- TAB 2: EDIT DATABASE ---
     with tab2:
         _fs_col, _ = st.columns([1, 5])
