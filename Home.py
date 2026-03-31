@@ -102,7 +102,8 @@ def _build_invoice_pdf(transaction_id: str, customer_name: str) -> bytes:
         try: total = float(r['TotalAmount'] or 0)
         except: pass
         due = str(r.get('DueDate', ''))
-    return db.create_pdf(transaction_id, customer_name, addr, cart, 0, tax, total, due)
+    subtotal = sum(i['qty'] * i['price'] for i in cart)
+    return db.create_pdf(transaction_id, customer_name, addr, cart, subtotal, tax, total, due)
 
 # --- HELPER: Edit Inventory Editor (shared by tab view + fullscreen) ---
 def _render_inv_editor(height=600):
@@ -235,7 +236,7 @@ if menu == "📊 Dashboard":
         df_filtered['TotalAmount'] = pd.to_numeric(df_filtered['TotalAmount'], errors='coerce').fillna(0)
         total_sales = df_filtered['TotalAmount'].sum()
         
-        unpaid_df = df[df['Status'].astype(str).str.strip().str.lower().isin(['pending', 'unpaid'])]
+        unpaid_df = df[df['Status'].astype(str).str.strip().str.lower().isin(['pending', 'unpaid', 'open'])]
         unpaid_total = pd.to_numeric(unpaid_df['TotalAmount'], errors='coerce').sum()
         
         c1, c2, c3 = st.columns(3)
@@ -486,8 +487,14 @@ elif menu == "🛒 Checkout":
                         tax_rate = float(str(raw_rate).replace("%", "").strip())
                         if tax_rate > 1: tax_rate = tax_rate / 100
                     except: tax_rate = 0.0
-                    # Use per-customer tax rate stored in session state (set on customer change via rerun)
-                    effective_tax_rate = st.session_state.get('co_effective_tax_rate', tax_rate)
+                    # Always start with the fresh global rate; only override if a customer
+                    # with a custom rate is actively selected (set via rerun in customer block below)
+                    cust_has_custom_rate = (
+                        st.session_state.get('co_last_cust') is not None and
+                        st.session_state.get('co_effective_tax_rate') is not None and
+                        st.session_state.get('co_effective_tax_rate') != tax_rate
+                    )
+                    effective_tax_rate = st.session_state['co_effective_tax_rate'] if cust_has_custom_rate else tax_rate
 
                     apply_tax = st.checkbox(f"Apply Tax ({(effective_tax_rate*100):.3f}%)", value=not is_wholesale)
                     tax_amt = subtotal * effective_tax_rate if apply_tax else 0.0
@@ -782,7 +789,7 @@ elif menu == "👥 Customers":
                             c_a.write(f"**${amt:.2f}**")
 
                             status_raw = str(t_row['Status']).strip()
-                            is_paid = status_raw.lower() == "paid"
+                            is_paid = status_raw.lower() not in ['pending', 'unpaid', 'open']
                             if is_paid: c_s.success("Paid", icon="✅")
                             else: c_s.warning("Unpaid", icon="⏳")
 
@@ -889,7 +896,22 @@ elif menu == "📝 Reports":
                 merged_items['LineCost'] = merged_items['QtySold'] * merged_items['Cost'].fillna(0)
                 total_cogs = merged_items['LineCost'].sum()
             else: total_cogs = 0.0
-            
+
+            # Check for invoices with no line items (contribute $0 to COGS)
+            product_item_ids = set(
+                df_items[
+                    df_items['TransactionID'].astype(str).isin(valid_ids) &
+                    ~df_items['SKU'].astype(str).str.upper().str.startswith('GIFT')
+                ]['TransactionID'].astype(str).unique()
+            )
+            invoices_no_items = [tid for tid in valid_ids if tid not in product_item_ids]
+            if invoices_no_items:
+                st.warning(
+                    f"⚠️ {len(invoices_no_items)} invoice(s) in this period have no matching line item records "
+                    f"and contribute $0 to COGS. This is common for old imported invoices. "
+                    f"Invoice IDs: {', '.join(invoices_no_items[:10])}{'…' if len(invoices_no_items) > 10 else ''}"
+                )
+
             gross_profit = total_income - total_cogs
             
             # D. Expenses
@@ -1064,7 +1086,7 @@ elif menu == "📝 Reports":
         df_trans = st.session_state['data']['transactions']
         df_cust = st.session_state['data']['customers']
         df_items = st.session_state['data']['items']
-        pending = df_trans[df_trans['Status'].astype(str).str.strip().str.lower().isin(['pending', 'unpaid'])].copy()
+        pending = df_trans[df_trans['Status'].astype(str).str.strip().str.lower().isin(['pending', 'unpaid', 'open'])].copy()
         if pending.empty: st.success("🎉 All invoices are paid!")
         else:
             if not df_cust.empty:
@@ -1143,11 +1165,19 @@ elif menu == "⚙️ Settings":
             raw_val = settings_dict.get("TaxRate", "0.08")
             try:
                 clean_val = float(str(raw_val).replace("%", "").strip())
-                # If stored as 0.08, display as 8.0. If stored as 8.0, display as 8.0
+                # Normalize: stored as decimal (0.0875) → display as 8.75; stored as percent (8.75) → display as 8.75
                 display_rate = clean_val * 100 if clean_val < 1.0 else clean_val
-            except ValueError: display_rate = 8.0
-            
-            new_rate_percent = st.number_input("Sales Tax Rate (%)", 0.0, 100.0, float(display_rate), step=0.001, format="%.3f")
+            except ValueError:
+                display_rate = 8.0
+            # Guard: clamp display_rate to a sane percentage range (0–99)
+            display_rate = max(0.0, min(float(display_rate), 99.0))
+
+            new_rate_percent = st.number_input(
+                "Sales Tax Rate — enter as a percentage, e.g. 8.75 for 8.75%",
+                min_value=0.0, max_value=99.0,
+                value=display_rate, step=0.001, format="%.3f"
+            )
+            st.caption(f"ℹ️ Will be applied as **{new_rate_percent:.3f}%** on retail sales.")
             next_inv = st.text_input("Next Invoice ID", value=settings_dict.get("NextInvoiceID", "1000"))
             
             # NEW: Expense Categories Management
