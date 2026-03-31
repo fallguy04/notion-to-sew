@@ -191,7 +191,9 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
         s_key = str(item['sku'])
         if s_key in sku_map:
             row_num = sku_map[s_key]
-            curr_stock = int(ws_inv.cell(row_num, 4).value or 0) 
+            raw_val = ws_inv.cell(row_num, 4).value
+            try: curr_stock = int(float(raw_val or 0))
+            except: curr_stock = 0
             updates.append({'range': f'D{row_num}', 'values': [[max(0, curr_stock - item['qty'])]]})
     if updates: ws_inv.batch_update(updates)
     force_refresh()
