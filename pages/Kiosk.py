@@ -242,7 +242,7 @@ elif st.session_state['page'] == 'checkout':
 
     with cust_tab1:
         cust_df = st.session_state['data']['customers']
-        selected_cust_name = st.selectbox("Name", cust_df['Name'], index=None, placeholder="Search customer name...", label_visibility="collapsed")
+        selected_cust_name = st.selectbox("Name", cust_df['Name'], index=None, placeholder="Search customer name...", label_visibility="collapsed", key="kiosk_checkout_customer_sel")
         if selected_cust_name:
             cust_row = cust_df[cust_df['Name'] == selected_cust_name].iloc[0]
 
@@ -251,8 +251,11 @@ elif st.session_state['page'] == 'checkout':
             n_name = st.text_input("Name"); n_email = st.text_input("Email")
             if st.form_submit_button("Join & Select"):
                 if n_name:
-                    db.add_customer(n_name, n_email); db.force_refresh()
-                    st.session_state['data'] = db.get_data(); st.rerun()
+                    new_cid = db.add_customer(n_name, n_email)
+                    # We don't need to call force_refresh() here as add_customer already does it
+                    st.session_state['data'] = db.get_data()
+                    st.session_state['kiosk_checkout_customer_sel'] = n_name
+                    st.rerun()
                 else: st.error("Name required.")
 
     st.divider()

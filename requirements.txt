@@ -5,3 +5,4 @@ google-auth
 fpdf
 streamlit-pdf-viewer
 streamlit-extras
+pytz

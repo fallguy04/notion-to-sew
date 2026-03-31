@@ -613,7 +613,12 @@ elif menu == "🛒 Checkout":
                     with cust_tab2:
                         with st.form("q_add"):
                             nn = st.text_input("Name"); ne = st.text_input("Email")
-                            if st.form_submit_button("Save"): db.add_customer(nn, ne); auto_refresh()
+                            if st.form_submit_button("Save"):
+                                if nn:
+                                    db.add_customer(nn, ne)
+                                    st.session_state['co_cust_sel'] = nn
+                                    auto_refresh()
+                                else: st.error("Name required")
 
                     credit_applied = 0.0
                     if selected_cust and cust_credit > 0:

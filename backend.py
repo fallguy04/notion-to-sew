@@ -79,7 +79,8 @@ def add_customer(name, email, is_wholesale=False):
     new_id = f"C-{str(uuid.uuid4())[:5]}"
     date_joined = datetime.now().strftime("%Y-%m-%d")
     ws.append_row([new_id, name, email, "", date_joined, "", "", 0.0, "TRUE" if is_wholesale else "FALSE", ""])
-    return force_refresh()
+    force_refresh()
+    return new_id
 
 # UPDATED: Added cost parameter
 def add_inventory_item(sku, name, price, stock, wholesale_price, cost):
