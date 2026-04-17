@@ -406,25 +406,23 @@ def send_receipt_email(to_email: str, invoice_id: str, pdf_bytes: bytes):
     """Sends the PDF receipt as an email attachment via Gmail SMTP.
     Requires [email] sender and app_password keys in st.secrets.
     """
-    # Fetch email secrets with maximum compatibility for different TOML structures
-    sender = None
-    password = None
+    # Comprehensive secret search
+    sender = st.secrets.get("sender")
+    password = st.secrets.get("app_password")
 
-    # 1. Try nested [email] section
-    if "email" in st.secrets:
-        email_sec = st.secrets["email"]
-        sender = email_sec.get("sender")
-        password = email_sec.get("app_password")
-    
-    # 2. Fallback to root level if not found in [email]
+    # If not at root, check all sections (including [email] and [gcp_service_account])
     if not sender or not password:
-        sender = st.secrets.get("sender")
-        password = st.secrets.get("app_password")
+        for key in st.secrets.keys():
+            section = st.secrets[key]
+            if isinstance(section, dict):
+                if not sender: sender = section.get("sender")
+                if not password: password = section.get("app_password")
+            if sender and password: break
 
-    # 3. Final validation
+    # Final validation
     if not sender or not password:
-        # Check if they are accidentally under another common name
-        raise KeyError(f"Email credentials not found in st.secrets. Found keys: {list(st.secrets.keys())}")
+        available_keys = list(st.secrets.keys())
+        raise KeyError(f"Email credentials not found in st.secrets. Found sections: {available_keys}. Please check secrets.toml.")
     
     # Try to get company name from settings
     try:
