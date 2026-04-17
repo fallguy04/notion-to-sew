@@ -406,23 +406,30 @@ def send_receipt_email(to_email: str, invoice_id: str, pdf_bytes: bytes):
     """Sends the PDF receipt as an email attachment via Gmail SMTP.
     Requires [email] sender and app_password keys in st.secrets.
     """
-    # Comprehensive secret search
+    # 1. Direct root access
     sender = st.secrets.get("sender")
     password = st.secrets.get("app_password")
 
-    # If not at root, check all sections (including [email] and [gcp_service_account])
+    # 2. Section-based search (looks in [email], [admin], or any other block)
     if not sender or not password:
         for key in st.secrets.keys():
-            section = st.secrets[key]
-            if isinstance(section, dict):
+            try:
+                # We try to treat every top-level key as a dictionary/section
+                section = st.secrets[key]
                 if not sender: sender = section.get("sender")
                 if not password: password = section.get("app_password")
+            except:
+                continue # Skip if the key isn't a section (like a simple string)
             if sender and password: break
 
-    # Final validation
+    # 3. Final validation with detailed error
     if not sender or not password:
-        available_keys = list(st.secrets.keys())
-        raise KeyError(f"Email credentials not found in st.secrets. Found sections: {available_keys}. Please check secrets.toml.")
+        all_found_keys = list(st.secrets.keys())
+        raise KeyError(
+            f"Email credentials missing. I can see these sections: {all_found_keys}. "
+            "If you just added 'sender' and 'app_password' to the Streamlit Cloud dashboard, "
+            "please go to the dashboard and click 'Reboot App' to force a refresh."
+        )
     
     # Try to get company name from settings
     try:
