@@ -186,7 +186,7 @@ if st.session_state['page'] == 'shop':
             st.markdown("### Item found:")
 
     with c_cart:
-        btn_label = f"CART ({cart_count})" if cart_count > 0 else "CART (0)"
+        btn_label = f"🛒 CART ({cart_count})" if cart_count > 0 else "🛒 CART (0)"
         if st.button(btn_label, type="primary", use_container_width=True, disabled=cart_count == 0):
             go_checkout()
             st.rerun()
@@ -260,11 +260,11 @@ if st.session_state['page'] == 'shop':
 # ==========================================
 elif st.session_state['page'] == 'checkout':
     st.title("Checkout")
-    if st.button("Back to Shop", use_container_width=True):
+    if st.button("⬅️ Back to Shop", use_container_width=True):
         go_home(); st.rerun()
     st.divider()
 
-    st.subheader("Step 1: Who is checking out?")
+    st.subheader("👤 Step 1: Who is checking out?")
     cust_tab1, cust_tab2 = st.tabs(["Search Name", "New Customer"])
     selected_cust_name = None; cust_row = None
 
@@ -287,7 +287,7 @@ elif st.session_state['page'] == 'checkout':
                 else: st.error("Name required.")
 
     st.divider()
-    st.subheader("Step 2: Your Items")
+    st.subheader("🛒 Step 2: Your Items")
     if not st.session_state['kiosk_cart']:
         st.info("Cart is empty.")
     else:
@@ -339,11 +339,11 @@ elif st.session_state['page'] == 'checkout':
                 if new_q != item['qty']: update_qty(i, new_q); st.rerun()
 
                 c_line_total.write(f"**${new_q * eff_price:.2f}**")
-                if c_del.button("Remove", key=f"del_{i}"): st.session_state['kiosk_cart'].pop(i); st.rerun()
+                if c_del.button("🗑️", key=f"del_{i}"): st.session_state['kiosk_cart'].pop(i); st.rerun()
                 checkout_cart.append({**item, 'price': eff_price, 'qty': new_q})
 
         st.divider()
-        st.subheader("Step 3: Total & Payment")
+        st.subheader("💰 Step 3: Total & Payment")
         subtotal = sum(i['qty'] * i['price'] for i in checkout_cart)
         tax_amt = 0.0 if cust_is_wholesale else subtotal * clean_rate
         total = subtotal + tax_amt
@@ -397,12 +397,12 @@ elif st.session_state['page'] == 'success':
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         with st.container(border=True):
-            st.markdown("# Thank You!")
+            st.markdown("# ✅ Thank You!")
             st.subheader(f"Order #{order.get('id', '')} · ${order.get('total', 0):.2f}")
         
         st.write("")
         with st.container(border=True):
-            st.subheader("Email Receipt")
+            st.subheader("📧 Email Receipt")
             if order.get('email_sent'): st.success(f"Receipt sent to **{order.get('receipt_email')}**")
             else:
                 st.text_input("Enter Email", value=order.get('customer_email', ''), key="kiosk_receipt_email")
@@ -414,16 +414,16 @@ elif st.session_state['page'] == 'success':
                         st.session_state['last_kiosk_order']['email_sent'] = True
                         st.session_state['last_kiosk_order']['receipt_email'] = email_addr
                     except Exception as e: st.session_state['email_error_msg'] = str(e)
-                st.button("Send Receipt", type="primary", use_container_width=True, on_click=send_receipt_action, args=(order,))
+                st.button("Send Receipt ➝", type="primary", use_container_width=True, on_click=send_receipt_action, args=(order,))
                 if 'email_error_msg' in st.session_state: st.error(st.session_state['email_error_msg']); del st.session_state['email_error_msg']
 
         st.write("")
         with st.container(border=True):
-            st.subheader("In-Store Print")
+            st.subheader("🖨️ In-Store Print")
             if order.get('pdf'):
                 _get_pdf_print_button(order['pdf'], label="Open / Print Receipt Now")
-                st.download_button("Save PDF", data=order['pdf'], file_name=f"Receipt_{order.get('id', 'order')}.pdf", mime="application/pdf", use_container_width=True)
+                st.download_button("💾 Save PDF", data=order['pdf'], file_name=f"Receipt_{order.get('id', 'order')}.pdf", mime="application/pdf", use_container_width=True)
 
             st.write("")
-            if st.button("Start New Order", type="primary", use_container_width=True):
+            if st.button("🏠 Start New Order", type="primary", use_container_width=True):
                 st.session_state['last_kiosk_order'] = None; go_home(); st.rerun()
