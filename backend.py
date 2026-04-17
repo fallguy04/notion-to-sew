@@ -406,17 +406,25 @@ def send_receipt_email(to_email: str, invoice_id: str, pdf_bytes: bytes):
     """Sends the PDF receipt as an email attachment via Gmail SMTP.
     Requires [email] sender and app_password keys in st.secrets.
     """
-    # Robustly fetch email secrets using try/except to avoid Streamlit KeyError with "in" operator
-    try:
-        sender = st.secrets["email"]["sender"]
-        password = st.secrets["email"]["app_password"]
-    except KeyError:
-        # Fallback to top-level if [email] section is missing
-        try:
-            sender = st.secrets["sender"]
-            password = st.secrets["app_password"]
-        except KeyError:
-            raise KeyError("Email secrets ('sender' or 'app_password') not found in secrets.toml.")
+    # Fetch email secrets with maximum compatibility for different TOML structures
+    sender = None
+    password = None
+
+    # 1. Try nested [email] section
+    if "email" in st.secrets:
+        email_sec = st.secrets["email"]
+        sender = email_sec.get("sender")
+        password = email_sec.get("app_password")
+    
+    # 2. Fallback to root level if not found in [email]
+    if not sender or not password:
+        sender = st.secrets.get("sender")
+        password = st.secrets.get("app_password")
+
+    # 3. Final validation
+    if not sender or not password:
+        # Check if they are accidentally under another common name
+        raise KeyError(f"Email credentials not found in st.secrets. Found keys: {list(st.secrets.keys())}")
     
     # Try to get company name from settings
     try:
