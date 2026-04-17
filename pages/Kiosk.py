@@ -25,30 +25,52 @@ st.markdown("""
         background-color: #fcfaf9;
     }
     
-    /* Hero Banner - Slimmer & Softer Color */
+    /* Hero Banner - Much Slimmer */
     .hero-container {
         background: linear-gradient(135deg, #5d6d7e 0%, #85929e 100%);
-        padding: 1.5rem 1rem;
-        border-radius: 1rem;
+        padding: 0.8rem 1rem;
+        border-radius: 0.8rem;
         color: white;
         text-align: center;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        margin-bottom: 1rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
     }
     .hero-title {
-        font-size: 2.2rem !important;
+        font-size: 1.4rem !important;
         font-weight: 700 !important;
-        margin-bottom: 0.2rem !important;
+        margin-bottom: 0rem !important;
         letter-spacing: -0.5px;
     }
     .hero-subtitle {
-        font-size: 1rem !important;
+        font-size: 0.8rem !important;
         opacity: 0.85;
     }
     
-    /* Search Box Styling */
+    /* Dominant Search Box Styling */
     div[data-baseweb="select"] {
-        border-radius: 0.8rem !important;
+        border-radius: 1.2rem !important;
+        border: 2px solid #5d6d7e !important;
+        height: 80px !important;
+        display: flex !important;
+        align-items: center !important;
+        font-size: 1.5rem !important;
+    }
+    
+    div[data-baseweb="select"] > div {
+        height: 100% !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+
+    div[data-baseweb="select"] input {
+        font-size: 1.5rem !important;
+    }
+
+    /* Cart Button Tuning */
+    .stButton > button[kind="primary"] {
+        height: 60px !important;
+        font-size: 1.2rem !important;
+        font-weight: 600 !important;
     }
     
     /* Card Styling */
@@ -139,26 +161,32 @@ if st.session_state['page'] == 'shop':
         </div>
     """, unsafe_allow_html=True)
 
-    # --- SEARCH & CART ROW ---
-    c_search, c_cart = st.columns([4, 1.2], vertical_alignment="bottom")
+    # --- DOMINANT SEARCH BAR ---
+    df = st.session_state['data']['inventory'].copy()
+    if 'Active' in df.columns:
+        df = df[df['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
+    df['lookup'] = df.apply(lambda r: f"{r['SKU']} — {r['Name']} (${float(r['Price']):.2f})", axis=1)
     
-    with c_search:
-        df = st.session_state['data']['inventory'].copy()
-        if 'Active' in df.columns:
-            df = df[df['Active'].apply(lambda x: str(x).strip().lower() not in ['false', '0', 'no', ''])]
-        df['lookup'] = df.apply(lambda r: f"{r['SKU']} — {r['Name']} (${float(r['Price']):.2f})", axis=1)
-        
-        search_selection = st.selectbox(
-            "Find Items",
-            df['lookup'],
-            index=None,
-            placeholder="🔍  Start typing a name or number...",
-            label_visibility="collapsed",
-            key="kiosk_item_search"
-        )
+    search_selection = st.selectbox(
+        "Find Items",
+        df['lookup'],
+        index=None,
+        placeholder="🔍  START TYPING TO SEARCH ITEMS...",
+        label_visibility="collapsed",
+        key="kiosk_item_search"
+    )
+
+    # --- CART & INFO ROW ---
+    c_info, c_cart = st.columns([4, 1.2], vertical_alignment="center")
+    
+    with c_info:
+        if not search_selection:
+            st.markdown("### ✨ Welcome! Find an item or scan a barcode.")
+        else:
+            st.markdown("### 🎯 Result found below:")
 
     with c_cart:
-        btn_label = f"🛒 Cart ({cart_count})" if cart_count > 0 else "🛒 Empty"
+        btn_label = f"🛒 CART ({cart_count})" if cart_count > 0 else "🛒 CART (0)"
         if st.button(btn_label, type="primary", use_container_width=True, disabled=cart_count == 0):
             go_checkout()
             st.rerun()

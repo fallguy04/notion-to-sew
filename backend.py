@@ -408,18 +408,25 @@ def send_receipt_email(to_email: str, invoice_id: str, pdf_bytes: bytes):
     """
     sender = st.secrets["email"]["sender"]
     password = st.secrets["email"]["app_password"]
+    
+    # Try to get company name from settings
+    try:
+        settings = get_settings_dict()
+        company_name = settings.get("CompanyName", "Notion to Sew")
+    except:
+        company_name = "Notion to Sew"
 
     msg = MIMEMultipart()
-    msg['From'] = f"Notion to Sew <{sender}>"
+    msg['From'] = f"{company_name} <{sender}>"
     msg['To'] = to_email
-    msg['Subject'] = f"Your Receipt from Notion to Sew — Invoice #{invoice_id}"
+    msg['Subject'] = f"Your Receipt from {company_name} — Invoice #{invoice_id}"
 
     body = (
         f"Hi there!\n\n"
-        f"Thank you for shopping at Notion to Sew. "
+        f"Thank you for shopping at {company_name}. "
         f"Your receipt for Invoice #{invoice_id} is attached as a PDF.\n\n"
         f"Questions? Just reply to this email.\n\n"
-        f"— Notion to Sew"
+        f"— {company_name}"
     )
     msg.attach(MIMEText(body, 'plain'))
 

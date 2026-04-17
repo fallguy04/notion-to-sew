@@ -231,7 +231,7 @@ with st.sidebar:
     st.markdown("## 🧵 Notion to Sew")
     st.caption("Admin Portal")
     st.divider()
-    menu = st.radio("Navigate", ["📊 Dashboard", "📦 Inventory", "🛒 Checkout", "👥 Customers", "📝 Reports", "⚙️ Settings"])
+    menu = st.radio("Navigate", ["📊 Dashboard", "📦 Inventory", "🛒 Checkout", "👥 Customers", "📝 Financials", "⚙️ Settings"])
     st.divider()
     if st.button("🔄 Refresh Database"):
         auto_refresh()
@@ -443,7 +443,7 @@ elif menu == "🛒 Checkout":
     if st.session_state.get('checkout_complete'):
         st.success(f"✅ Order #{st.session_state['last_order']['id']} Recorded Successfully!")
         
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         
         # 1. View Invoice
         if c1.button("👁️ View Invoice", use_container_width=True):
@@ -460,8 +460,25 @@ elif menu == "🛒 Checkout":
                 mime="application/pdf",
                 use_container_width=True
             )
-        # 3. New Sale
-        if c3.button("✨ New Sale", type="primary", use_container_width=True):
+
+        # 3. Email Receipt
+        with c3:
+            with st.popover("📧 Email Receipt", use_container_width=True):
+                # Try to get customer email if available
+                # Note: last_order currently only stores id and pdf. 
+                # We might need to store the email too or look it up.
+                e_addr = st.text_input("Send to Email", placeholder="customer@example.com")
+                if st.button("Send ➝", type="primary", use_container_width=True):
+                    if e_addr:
+                        try:
+                            db.send_receipt_email(e_addr, st.session_state['last_order']['id'], pdf_data)
+                            st.success("Sent!")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+                    else: st.error("Email required.")
+
+        # 4. New Sale
+        if c4.button("✨ New Sale", type="primary", use_container_width=True):
             st.session_state['checkout_complete'] = False
             st.session_state['view_last_invoice'] = False
             st.session_state['last_order'] = None
@@ -894,20 +911,34 @@ elif menu == "👥 Customers":
                             else: c_s.warning("Unpaid", icon="⏳")
 
                             # ACTION BUTTONS (Unique Keys Added)
-                            b1, b2, b3 = c_act.columns(3)
+                            b1, b2, b3, b4 = c_act.columns(4)
 
                             # KEY FIX: Append _{i} to ensure uniqueness
-                            if b1.button("👁️", key=f"v_{t_row['TransactionID']}_{i}"):
+                            if b1.button("👁️", key=f"v_{t_row['TransactionID']}_{i}", help="View"):
                                 st.session_state[f"view_inv_{t_row['TransactionID']}"] = True
                                 st.rerun()
 
+                            # Email Button
+                            with b2:
+                                with st.popover("📧", help="Email Receipt"):
+                                    e_addr = st.text_input("Email", value=row.get('Email', ''), key=f"em_{t_row['TransactionID']}_{i}")
+                                    if st.button("Send", key=f"ems_{t_row['TransactionID']}_{i}", use_container_width=True):
+                                        if e_addr:
+                                            try:
+                                                pdf_b = _build_invoice_pdf(str(t_row['TransactionID']), row['Name'])
+                                                db.send_receipt_email(e_addr, str(t_row['TransactionID']), pdf_b)
+                                                st.toast("Email Sent!")
+                                            except Exception as e:
+                                                st.error(f"Failed: {e}")
+                                        else: st.error("Email required.")
+
                             if not is_paid:
-                                if b2.button("💲", key=f"p_{t_row['TransactionID']}_{i}", help="Mark Paid"):
+                                if b3.button("💲", key=f"p_{t_row['TransactionID']}_{i}", help="Mark Paid"):
                                     db.mark_invoice_paid(t_row['TransactionID'])
                                     st.toast("Paid!")
                                     auto_refresh()
 
-                            if b3.button("🗑️", key=f"d_{t_row['TransactionID']}_{i}", type="primary"):
+                            if b4.button("🗑️", key=f"d_{t_row['TransactionID']}_{i}", type="primary", help="Delete"):
                                 db.delete_invoice(t_row['TransactionID'])
                                 st.warning("Deleted.")
                                 auto_refresh()
@@ -935,9 +966,9 @@ elif menu == "👥 Customers":
                             pdf_viewer(input=pdf_bytes, width="100%")
 
 # ==========================================
-# 5. REPORTS
+# 5. FINANCIALS
 # ==========================================
-elif menu == "📝 Reports":
+elif menu == "📝 Financials":
     page_header("📝", "Financial Reports", "Income statement, tax liability, top sellers, and A/R")
     tab1, tab2, tab3, tab4 = st.tabs(["💰 Income Statement", "🏛️ Sales Tax", "📈 Top Sellers", "⏳ Unpaid"])
     
