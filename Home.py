@@ -239,7 +239,13 @@ with st.sidebar:
 # --- DATA INTEGRITY BANNER ---
 # Sheets can't enforce a primary key, so surface duplicates loudly instead of
 # letting them quietly merge two customers' books together.
-_problems = db.check_integrity()
+# This is a diagnostic and must never be able to take the app down with it: a
+# half-reloaded deploy can leave an older backend module in sys.modules without
+# check_integrity, and the DB read can fail independently.
+try:
+    _problems = getattr(db, 'check_integrity', lambda: [])()
+except Exception:
+    _problems = []
 if _problems:
     st.error("⚠️ **Database problems detected — some numbers on this page may be wrong.**")
     for _p in _problems:
