@@ -1,41 +1,66 @@
 # Notion to Sew — Outstanding Tasks
 
-## 1. Set Up Gmail for Email Receipts
+## 🚨 1. URGENT: Rotate the exposed credentials
 
-The kiosk now sends PDF receipts by email, but it needs real credentials to work.
+`.streamlit/secrets.toml` is committed to this repository, and the repository is
+public. That file contains the Google service-account private key (full read/write
+on the customer database), the Gmail app password, and the admin PIN. Anyone who
+found the repo has had full access.
 
-### Step 1: Create a Gmail App Password
-1. Go to your Google Account → **Security**
-2. Make sure **2-Step Verification** is turned ON
-3. Search for **"App passwords"** (or go to myaccount.google.com/apppasswords)
-4. Create a new app password — name it "Notion to Sew Kiosk"
-5. Copy the 16-character password it gives you (e.g. `abcd efgh ijkl mnop`)
+**Removing the file is not enough — it stays in the git history.** The credentials
+themselves have to be replaced. Do these in order:
 
-### Step 2: Update secrets.toml (local)
-Open `.streamlit/secrets.toml` and fill in the placeholders at the bottom:
-```toml
-[email]
-sender = "notiontosew217@gmail.com"       # The Gmail address sending the receipts
-app_password = "iysa dmqg itzb yzkp"  # The App Password from Step 1
-```
+1. **Google Cloud** → IAM & Admin → Service Accounts → `inventory-bot@idyllic-web-418117`
+   → Keys → delete the existing key, then **Add key → Create new key (JSON)**.
+2. **Gmail** → myaccount.google.com/apppasswords → revoke the "Notion to Sew Kiosk"
+   password, create a new one.
+3. **Pick a new admin PIN** (the current one is in the public repo).
+4. Put all three into **share.streamlit.io → your app → Settings → Secrets**.
+   Confirm the app still works after saving.
+5. Only once step 4 is confirmed working: `git rm --cached .streamlit/secrets.toml`
+   and commit. `.gitignore` now prevents it being re-added.
+6. Consider making this repository private, or deleting and recreating it so the
+   history goes away. Note: Streamlit Community Cloud needs private-repo access
+   granted before the repo can be flipped to private, or the deployment breaks.
 
-### Step 3: Update Streamlit Cloud secrets
-1. Go to your app on share.streamlit.io
-2. Click **Settings → Secrets**
-3. Add the same two lines from Step 2 to the Secrets editor there
-
-### Notes
-- The email is sent FROM the Gmail account you set as `sender`
-- The customer's email is pre-filled from their customer record if they're in the system
-- If email fails, the success screen shows a warning and a download button instead
-- Guest/walk-in customers can type in their email manually at checkout
+Until step 1 is done, treat the database as compromised.
 
 ---
 
-## 2. Kiosk "Default Page" Behavior
+## 2. Questions for Mom
+
+**Merged inventory items** — four pairs of duplicate SKUs were combined. Two had
+conflicting prices and the first was kept; please confirm or correct in the
+inventory editor:
+
+| SKU | Kept | Other row said | Note |
+|-----|------|----------------|------|
+| `13534 C8` | $0.80 | $1.10 | Stock came out at **0** — needs a physical count |
+| `8103 C87` | $0.45 | $0.50 | |
+
+The merged rows still carry one dye-lot colour in their names (“Cream 7/16"
+triangle shell”, “Dark Lilac Corozo”) even though each now holds both lots.
+Rename if that's confusing.
+
+**Negative stock** — 21 items show negative quantities (worst: `4099 ABR` at −76,
+`3110 C20A` at −62). These are sales recorded without matching restocks. Decide
+whether to zero them out or do a count.
+
+**Expenses** — 34 of the 40 expense rows have an amount of $0.00; all are 2023
+"Vendor Payment" entries where the figures did not survive the migration. Any
+profit number the app shows is really just revenue until these are filled in.
+Does the bookkeeper still have the totals?
+
+**The Calico Point sale** — the order she received a cheque for was never entered.
+Checkout → Calico Point Fabric → items → Payment: **Check** (that records it as
+paid immediately; "Invoice (Pay Later)" is the one that creates an open invoice).
+
+---
+
+## 3. Kiosk "Default Page" Behavior
 
 Currently the app opens to the Admin portal by default (Home.py).
-The kiosk lives at `/Kiosk` (pages/kiosk.py).
+The kiosk lives at `/Kiosk` (pages/Kiosk.py).
 
 **Options to make Kiosk the "default" on the iPad:**
 - Bookmark the direct kiosk URL on the iPad instead of the home URL
@@ -44,9 +69,9 @@ The kiosk lives at `/Kiosk` (pages/kiosk.py).
 
 ---
 
-## 3. Keep-Alive Status
+## 4. Keep-Alive Status
 
-The kiosk page now pings `/_stcore/health` every 9 minutes via JavaScript.
+The kiosk page pings `/_stcore/health` every 9 minutes via JavaScript.
 This helps, but Streamlit Cloud's sleep is based on WebSocket inactivity.
 
 **If the app still goes to sleep**, the proper fix is the `streamlit-autorefresh`
@@ -57,7 +82,7 @@ pip install streamlit-autorefresh
 ```
 
 Then add `streamlit-autorefresh` back to `requirements.txt` and redeploy.
-The import is already removed from Home.py — you'd add it to `kiosk.py` instead:
+The import is already removed from Home.py — you'd add it to `Kiosk.py` instead:
 
 ```python
 from streamlit_autorefresh import st_autorefresh
@@ -66,29 +91,42 @@ st_autorefresh(interval=9 * 60 * 1000, key="keepalive")
 
 ---
 
-## 4. Change the Staff PIN (do this before going live!)
+## Data repairs completed (2026-08-10)
 
-The default PIN is `1234` — change it in two places:
+The database had no way to enforce unique IDs, and three collisions had built up.
+All are fixed; a backup of the pre-repair state is in Google Drive as
+"NotionToSew_DB — BACKUP before CustomerID fix 2026-08-10".
 
-**Local:** `.streamlit/secrets.toml`
-```toml
-[admin]
-pin = "your-new-pin"
-```
+- **Duplicate CustomerIDs.** `C-5` was shared by Calico Point Fabric and a bogus
+  record, `C-6` by County Line Fabrics and another. Clicking "Manage" on the real
+  shop opened the wrong profile and hid its invoices. The two bogus records (which
+  arrived with the March 2026 import, not from this app) were removed. Calico Point
+  now owns C-5 with its 15 invoices; County Line owns C-6 with 12.
+- **27 phantom transaction rows.** The same import fanned every C-5/C-6 invoice into
+  two identical rows, double-counting **$18,822.52** of revenue. Removed;
+  TransactionItems was untouched and needed no changes.
+- **5 duplicate SKUs.** Four pairs merged with stock summed; the four books that all
+  shared the SKU "Book" now have `BOOK1`–`BOOK4`, and their 12 historical line items
+  were retagged by product name so each book keeps its own sales history.
+- **6 duplicate customer records** from repeated New Customer submissions removed
+  (all had zero invoices and zero credit).
 
-**Streamlit Cloud:** Settings → Secrets → add the same `[admin]` block
+### Code changes that prevent recurrence
 
----
+- `check_integrity()` in `backend.py` detects duplicate CustomerIDs, SKUs and invoice
+  numbers; `Home.py` shows a red banner when any exist.
+- `add_customer` now checks existing IDs and regenerates until unique.
+- All eleven `worksheet.find()` calls are scoped with `in_column=1` — they previously
+  scanned entire sheets, so an ID could match a phone number or note and write to the
+  wrong row.
+- The customer "Manage" button stores the clicked row, not just the ID.
+- Customer deletion is blocked while an ID is shared.
+- Accounts Receivable collapses duplicate IDs before merging and includes the row
+  index in widget keys (it would otherwise crash on a duplicate-key error).
+- Checkout and Kiosk resolve the customer by row with disambiguated labels instead of
+  by name.
 
-## Done ✅
-- [x] App opens to Kiosk by default
-- [x] Staff access via hidden sidebar PIN on kiosk page
-- [x] "Back to Kiosk" button in Admin sidebar
-- [x] Email receipt function added to backend.py (send_receipt_email)
-- [x] Email input added to kiosk checkout (pre-fills from customer record)
-- [x] Kiosk success screen shows email confirmation, no PDF iframe
-- [x] Keep-alive JS ping added to kiosk.py
-- [x] streamlit_autorefresh import error fixed (removed from Home.py)
-- [x] Expense logger bug fixed (was a dangling selectbox with no form/submit)
-- [x] Removed time.sleep(0.5) blocking call from kiosk
-- [x] Removed unused imports (base64, components) from Home.py
+### Known remaining wrinkle
+
+Invoice 175 (2023-05-13, $24.00) points at customer `C-104`, who no longer exists.
+It shows as "Unknown" in reports. Harmless, pre-existing.

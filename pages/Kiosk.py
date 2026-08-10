@@ -270,9 +270,26 @@ elif st.session_state['page'] == 'checkout':
 
     with cust_tab1:
         cust_df = st.session_state['data']['customers']
-        selected_cust_name = st.selectbox("Name", cust_df['Name'], index=None, placeholder="Search customer name...", label_visibility="collapsed", key="kiosk_checkout_customer_sel")
-        if selected_cust_name:
-            cust_row = cust_df[cust_df['Name'] == selected_cust_name].iloc[0]
+        # Names are not unique, so the picker resolves to a row, not a name —
+        # otherwise the sale lands on whichever namesake comes first.
+        name_counts = cust_df['Name'].astype(str).value_counts()
+        cust_labels, label_to_idx = [], {}
+        for idx, r in cust_df.iterrows():
+            nm = str(r['Name'])
+            lbl = f"{nm} ({r['CustomerID']})" if name_counts.get(nm, 0) > 1 else nm
+            cust_labels.append(lbl); label_to_idx[lbl] = idx
+
+        pending_new = st.session_state.pop('kiosk_pending_new_id', None)
+        if pending_new is not None:
+            for lbl, idx in label_to_idx.items():
+                if cust_df.loc[idx, 'CustomerID'] == pending_new:
+                    st.session_state['kiosk_checkout_customer_sel'] = lbl
+                    break
+
+        selected_label = st.selectbox("Name", cust_labels, index=None, placeholder="Search customer name...", label_visibility="collapsed", key="kiosk_checkout_customer_sel")
+        if selected_label:
+            cust_row = cust_df.loc[label_to_idx[selected_label]]
+            selected_cust_name = str(cust_row['Name'])
 
     with cust_tab2:
         with st.form("new_kiosk_cust"):
@@ -282,7 +299,8 @@ elif st.session_state['page'] == 'checkout':
                     new_cid = db.add_customer(n_name, n_email)
                     # We don't need to call force_refresh() here as add_customer already does it
                     st.session_state['data'] = db.get_data()
-                    st.session_state['kiosk_checkout_customer_sel'] = n_name
+                    st.session_state['kiosk_pending_new_id'] = new_cid
+                    st.session_state.pop('kiosk_checkout_customer_sel', None)
                     st.rerun()
                 else: st.error("Name required.")
 

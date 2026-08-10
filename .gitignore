@@ -1,0 +1,14 @@
+# Secrets — never commit these. Configure them in Streamlit Cloud instead:
+# share.streamlit.io -> your app -> Settings -> Secrets
+.streamlit/secrets.toml
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+.DS_Store

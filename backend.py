@@ -47,6 +47,55 @@ def force_refresh():
     get_data.clear()
     return True
 
+def check_integrity():
+    """Returns a list of plain-English data problems, or [] if the DB is clean.
+
+    Sheets can't enforce a primary key, so the two failure modes that silently
+    corrupt the books are caught here instead: a duplicate CustomerID merges two
+    customers' invoice histories, and a duplicate TransactionID double-counts
+    revenue in every report.
+    """
+    data = get_data()
+    problems = []
+
+    cust = data.get("customers")
+    if cust is not None and not cust.empty and 'CustomerID' in cust.columns:
+        ids = cust['CustomerID'].astype(str).str.strip()
+        counts = ids[ids != ""].value_counts()
+        for cid, n in counts[counts > 1].items():
+            who = ", ".join(cust.loc[ids == cid, 'Name'].astype(str))
+            problems.append(
+                f"CustomerID **{cid}** is shared by {n} customers ({who}). "
+                "Their invoices and store credit are merged, and the Manage "
+                "button opens whichever one comes first in the sheet."
+            )
+
+    invn = data.get("inventory")
+    if invn is not None and not invn.empty and 'SKU' in invn.columns:
+        skus = invn['SKU'].astype(str).str.strip()
+        counts = skus[skus != ""].value_counts()
+        for sku, n in counts[counts > 1].items():
+            names = ", ".join(invn.loc[skus == sku, 'Name'].astype(str).head(4))
+            problems.append(
+                f"SKU **{sku}** is used by {n} products ({names}). They all ring up at "
+                "the first one's price, and stock is deducted from a different row than "
+                "restocking adds to — give each product its own SKU."
+            )
+
+    trans = data.get("transactions")
+    if trans is not None and not trans.empty and 'TransactionID' in trans.columns:
+        tids = trans['TransactionID'].astype(str).str.strip()
+        counts = tids[tids != ""].value_counts()
+        dupes = counts[counts > 1]
+        if not dupes.empty:
+            problems.append(
+                f"{len(dupes)} invoice number(s) appear more than once in Transactions "
+                f"({', '.join(str(i) for i in dupes.index[:5])}"
+                f"{'…' if len(dupes) > 5 else ''}) — revenue is being double-counted."
+            )
+
+    return problems
+
 def get_settings_dict():
     """Returns the Settings sheet as a plain key→value dict."""
     data = get_data()
@@ -76,7 +125,14 @@ def add_customer(name, email, is_wholesale=False):
         ws.update_cell(1, 9, 'IsWholesale')
     if 'TaxRate' not in headers:
         ws.update_cell(1, 10, 'TaxRate')
-    new_id = f"C-{str(uuid.uuid4())[:5]}"
+    # Sheets has no UNIQUE constraint, so enforce it here. A collision silently
+    # merges two customers' invoice histories and makes the Manage button open
+    # the wrong profile — see check_integrity().
+    existing = {v.strip() for v in ws.col_values(1)[1:] if v.strip()}
+    new_id = f"C-{uuid.uuid4().hex[:8]}"
+    while new_id in existing:
+        new_id = f"C-{uuid.uuid4().hex[:8]}"
+
     date_joined = datetime.now().strftime("%Y-%m-%d")
     ws.append_row([new_id, name, email, "", date_joined, "", "", 0.0, "TRUE" if is_wholesale else "FALSE", ""])
     force_refresh()
@@ -98,7 +154,7 @@ def restock_item(sku, qty_to_add, new_cost=None):
     ws = sh.worksheet("Inventory")
     
     try:
-        cell = ws.find(str(sku))
+        cell = ws.find(str(sku), in_column=1)
         # Update Stock (Column 4 / D)
         current_stock = int(ws.cell(cell.row, 4).value or 0)
         ws.update_cell(cell.row, 4, current_stock + qty_to_add)
@@ -152,7 +208,7 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
     if credit_used > 0 and cust_id:
         ws_cust = sh.worksheet("Customers")
         try:
-            cell = ws_cust.find(cust_id)
+            cell = ws_cust.find(cust_id, in_column=1)
             current_credit = float(ws_cust.cell(cell.row, 8).value or 0)
             ws_cust.update_cell(cell.row, 8, max(0.0, current_credit - credit_used))
         except: pass
@@ -163,7 +219,7 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
     
     ws_set = sh.worksheet("Settings")
     try:
-        cell = ws_set.find("NextInvoiceID")
+        cell = ws_set.find("NextInvoiceID", in_column=1)
         current_id = int(ws_set.cell(cell.row, cell.col + 1).value)
         ws_set.update_cell(cell.row, cell.col + 1, current_id + 1)
         invoice_id = str(current_id)
@@ -216,7 +272,7 @@ def mark_invoice_paid(invoice_id):
     invoice_id_str = str(invoice_id).strip()
     # Try direct find first (fast path)
     try:
-        cell = ws.find(invoice_id_str)
+        cell = ws.find(invoice_id_str, in_column=1)
         ws.update_cell(cell.row, 6, "Paid")
         return force_refresh()
     except Exception:
@@ -246,11 +302,11 @@ def delete_invoice(invoice_id):
     client = get_client()
     sh = client.open("NotionToSew_DB")
     ws_trans = sh.worksheet("Transactions")
-    try: ws_trans.delete_rows(ws_trans.find(str(invoice_id)).row)
+    try: ws_trans.delete_rows(ws_trans.find(str(invoice_id), in_column=1).row)
     except: pass
     ws_items = sh.worksheet("TransactionItems")
     try:
-        while True: ws_items.delete_rows(ws_items.find(str(invoice_id)).row)
+        while True: ws_items.delete_rows(ws_items.find(str(invoice_id), in_column=1).row)
     except: pass
     return force_refresh()
 
@@ -259,7 +315,7 @@ def update_customer_details(cust_id, new_name, address, phone, notes, is_wholesa
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Customers")
     try:
-        cell = ws.find(cust_id)
+        cell = ws.find(cust_id, in_column=1)
         ws.update_cell(cell.row, 2, new_name)
         ws.update_cell(cell.row, 4, phone)
         ws.update_cell(cell.row, 6, address)
@@ -285,7 +341,7 @@ def delete_customer(cust_id):
     sh = client.open("NotionToSew_DB")
     ws = sh.worksheet("Customers")
     try:
-        ws.delete_rows(ws.find(cust_id).row)
+        ws.delete_rows(ws.find(cust_id, in_column=1).row)
         return force_refresh()
     except: return False
 
@@ -299,7 +355,7 @@ def sell_gift_certificate(giver_id, receiver_id, amount, pay_method):
     
     ws_set = sh.worksheet("Settings")
     try:
-        cell = ws_set.find("NextInvoiceID")
+        cell = ws_set.find("NextInvoiceID", in_column=1)
         current_id = int(ws_set.cell(cell.row, cell.col + 1).value)
         ws_set.update_cell(cell.row, cell.col + 1, current_id + 1)
         invoice_id = str(current_id)
@@ -307,7 +363,7 @@ def sell_gift_certificate(giver_id, receiver_id, amount, pay_method):
         invoice_id = f"INV-{date_now.strftime('%H%M%S')}"
 
     ws_cust = sh.worksheet("Customers")
-    try: receiver_name = ws_cust.cell(ws_cust.find(receiver_id).row, 2).value
+    try: receiver_name = ws_cust.cell(ws_cust.find(receiver_id, in_column=1).row, 2).value
     except: receiver_name = "Unknown"
 
     sh.worksheet("Transactions").append_row([
@@ -319,7 +375,7 @@ def sell_gift_certificate(giver_id, receiver_id, amount, pay_method):
     ])
     
     try:
-        cell = ws_cust.find(receiver_id)
+        cell = ws_cust.find(receiver_id, in_column=1)
         curr = float(ws_cust.cell(cell.row, 8).value or 0)
         ws_cust.update_cell(cell.row, 8, curr + amount)
     except: pass

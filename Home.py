@@ -236,6 +236,16 @@ with st.sidebar:
     if st.button("🔄 Refresh Database"):
         auto_refresh()
 
+# --- DATA INTEGRITY BANNER ---
+# Sheets can't enforce a primary key, so surface duplicates loudly instead of
+# letting them quietly merge two customers' books together.
+_problems = db.check_integrity()
+if _problems:
+    st.error("⚠️ **Database problems detected — some numbers on this page may be wrong.**")
+    for _p in _problems:
+        st.markdown(f"- {_p}")
+    st.divider()
+
 # ==========================================
 # FULLSCREEN: EDIT DATABASE
 # ==========================================
@@ -604,10 +614,27 @@ elif menu == "🛒 Checkout":
                     cust_tab1, cust_tab2 = st.tabs(["Existing", "New"])
                     selected_cust = None; cust_credit = 0.0; cust_id = "Guest"
                     with cust_tab1:
-                        selected_cust_name = st.selectbox("Customer", cust['Name'], index=None, key='co_cust_sel')
+                        # Two customers can share a name, so pick by row, not by name —
+                        # otherwise the sale is filed against whichever one comes first.
+                        _name_counts = cust['Name'].astype(str).value_counts()
+                        _labels, _label_to_idx = [], {}
+                        for _idx, _r in cust.iterrows():
+                            _nm = str(_r['Name'])
+                            _lbl = f"{_nm} ({_r['CustomerID']})" if _name_counts.get(_nm, 0) > 1 else _nm
+                            _labels.append(_lbl); _label_to_idx[_lbl] = _idx
+
+                        # A customer just created on the "New" tab gets selected here.
+                        _new_id = st.session_state.pop('co_pending_new_id', None)
+                        if _new_id is not None:
+                            for _lbl, _idx in _label_to_idx.items():
+                                if cust.loc[_idx, 'CustomerID'] == _new_id:
+                                    st.session_state['co_cust_sel'] = _lbl
+                                    break
+
+                        selected_cust_name = st.selectbox("Customer", _labels, index=None, key='co_cust_sel')
                         if selected_cust_name:
-                            selected_cust = selected_cust_name
-                            cust_row = cust[cust['Name'] == selected_cust].iloc[0]
+                            cust_row = cust.loc[_label_to_idx[selected_cust_name]]
+                            selected_cust = str(cust_row['Name'])
                             cust_id = cust_row['CustomerID']
                             try: cust_credit = float(cust_row.get('Credit', 0) if cust_row.get('Credit') != "" else 0)
                             except: cust_credit = 0.0
@@ -636,8 +663,10 @@ elif menu == "🛒 Checkout":
                             nn = st.text_input("Name"); ne = st.text_input("Email")
                             if st.form_submit_button("Save"):
                                 if nn:
-                                    db.add_customer(nn, ne)
-                                    st.session_state['co_cust_sel'] = nn
+                                    # Hand the new ID to the Existing tab; setting the
+                                    # raw name breaks when that name is not unique.
+                                    st.session_state['co_pending_new_id'] = db.add_customer(nn, ne)
+                                    st.session_state.pop('co_cust_sel', None)
                                     auto_refresh()
                                 else: st.error("Name required")
 
@@ -789,6 +818,10 @@ elif menu == "👥 Customers":
                         st.write("") # Vertical alignment spacer
                         if st.button("Manage ➝", key=f"btn_m_{i}_{row['CustomerID']}"):
                             st.session_state['active_cust_id'] = row['CustomerID']
+                            # Remember the row too: CustomerID alone is not reliably
+                            # unique, and looking the profile up by ID can open the
+                            # wrong customer.
+                            st.session_state['active_cust_row'] = i
                             st.rerun()
 
     # ==========================================
@@ -797,20 +830,37 @@ elif menu == "👥 Customers":
     else:
         # Get Active Customer Data
         cid = st.session_state['active_cust_id']
+        ridx = st.session_state.get('active_cust_row')
         mask = df_cust['CustomerID'] == cid
-        
+
         if df_cust[mask].empty:
             st.error("Customer not found. They may have been deleted.")
             if st.button("Back to List"):
                 st.session_state['active_cust_id'] = None
+                st.session_state['active_cust_row'] = None
                 st.rerun()
         else:
-            row = df_cust[mask].iloc[0]
-            
+            # Prefer the exact row that was clicked. Falling back to the first
+            # ID match is what makes a shared ID open the wrong customer.
+            if ridx is not None and ridx in df_cust.index and df_cust.loc[ridx, 'CustomerID'] == cid:
+                row = df_cust.loc[ridx]
+            else:
+                row = df_cust[mask].iloc[0]
+
+            if len(df_cust[mask]) > 1:
+                sharers = ", ".join(df_cust[mask]['Name'].astype(str))
+                st.error(
+                    f"⚠️ **CustomerID {cid} is shared by {len(df_cust[mask])} customers "
+                    f"({sharers}).** The history and store credit below are the *combined* "
+                    "totals for all of them, and edits here may save to the wrong one. "
+                    "Give each customer a unique CustomerID in the Customers sheet to fix this."
+                )
+
             # --- HEADER ---
             c_back, c_title = st.columns([1, 5])
             if c_back.button("⬅️ Back"):
                 st.session_state['active_cust_id'] = None
+                st.session_state['active_cust_row'] = None
                 st.rerun()
             c_title.title(row['Name'])
 
@@ -860,10 +910,19 @@ elif menu == "👥 Customers":
                     
                     st.write("")
                     with st.expander("🗑️ Delete Profile"):
-                        if st.checkbox(f"I confirm deletion of {row['Name']}", key="del_chk"):
+                        if len(df_cust[mask]) > 1:
+                            # Deleting by ID removes whichever row comes first in the
+                            # sheet, which may well be the other customer.
+                            st.error(
+                                f"Deletion is disabled while CustomerID {cid} is shared by "
+                                "more than one customer — it could delete the wrong one. "
+                                "Give them unique IDs first."
+                            )
+                        elif st.checkbox(f"I confirm deletion of {row['Name']}", key="del_chk"):
                             if st.button("Delete Permanently", type="primary"):
                                 db.delete_customer(cid)
                                 st.session_state['active_cust_id'] = None
+                                st.session_state['active_cust_row'] = None
                                 st.success("Deleted.")
                                 auto_refresh()
 
@@ -1271,7 +1330,18 @@ elif menu == "📝 Financials":
             if not df_cust.empty:
                 pending['CustomerID'] = pending['CustomerID'].astype(str)
                 df_cust['CustomerID'] = df_cust['CustomerID'].astype(str)
-                merged = pending.merge(df_cust[['CustomerID', 'Name']], on='CustomerID', how='left')
+                # Collapse duplicate CustomerIDs first. Merging against them fans
+                # each invoice out into one row per matching customer, which both
+                # inflates the totals and crashes the page on duplicate widget keys.
+                lookup = df_cust[['CustomerID', 'Name']].copy()
+                shared = lookup['CustomerID'].duplicated(keep=False)
+                if shared.any():
+                    lookup.loc[shared, 'Name'] = (
+                        lookup[shared].groupby('CustomerID')['Name']
+                        .transform(lambda s: " / ".join(s.astype(str)) + " ⚠️ shared ID")
+                    )
+                lookup = lookup.drop_duplicates(subset='CustomerID', keep='first')
+                merged = pending.merge(lookup, on='CustomerID', how='left')
             else: merged = pending; merged['Name'] = "Unknown"
             
             for i, row in merged.iterrows():
@@ -1282,16 +1352,18 @@ elif menu == "📝 Financials":
                     c2.write(f"Due: {row['DueDate']}")
                     c3.write(f"**${float(row['TotalAmount']):,.2f}**")
                     c_v, c_p = c4.columns(2)
-                    if c_v.button("👁️", key=f"uv_{row['TransactionID']}"):
+                    # Keys carry the row index as well — invoice numbers are not
+                    # guaranteed unique, and a collision crashes the whole tab.
+                    if c_v.button("👁️", key=f"uv_{row['TransactionID']}_{i}"):
                         st.session_state[f"view_inv_{row['TransactionID']}"] = True
                         st.rerun()
-                    if c_p.button("💲", key=f"up_{row['TransactionID']}"):
+                    if c_p.button("💲", key=f"up_{row['TransactionID']}_{i}"):
                         db.mark_invoice_paid(row['TransactionID']); st.balloons(); auto_refresh()
 
                 # Previewer (Unpaid Report)
                 if st.session_state.get(f"view_inv_{row['TransactionID']}", False):
                     with st.container(border=True):
-                        if st.button("❌ Close", key=f"uclose_{row['TransactionID']}"):
+                        if st.button("❌ Close", key=f"uclose_{row['TransactionID']}_{i}"):
                             st.session_state[f"view_inv_{row['TransactionID']}"] = False
                             st.rerun()
 
@@ -1305,7 +1377,7 @@ elif menu == "📝 Financials":
                             data=pdf_bytes,
                             file_name=f"Invoice_{t_id}.pdf",
                             mime="application/pdf",
-                            key=f"dl_unpaid_{t_id}",
+                            key=f"dl_unpaid_{t_id}_{i}",
                             type="primary",
                             use_container_width=True
                         )
