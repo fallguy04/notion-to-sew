@@ -65,9 +65,11 @@ def auto_refresh():
 
 # --- HELPER: Branded page header ---
 def page_header(icon: str, title: str, subtitle: str = ""):
-    colored_header(label=f"{icon} {title}", description=subtitle, color_name="blue-70")
+    # green-70 matches the spruce primary in config.toml; colored_header draws a
+    # fixed-palette rule that otherwise stays Streamlit blue and fights the theme.
+    colored_header(label=f"{icon} {title}", description=subtitle, color_name="green-70")
 
-# --- HELPER: Normalize transaction IDs (handles "1001.0" → "1001" from old imports) ---
+# --- HELPER: Normalize transaction IDs (handles "1001.0" → "1001" from old imports) ---
 def _normalize_tid(tid) -> str:
     s = str(tid).strip()
     try:
@@ -75,7 +77,7 @@ def _normalize_tid(tid) -> str:
     except (ValueError, TypeError):
         return s
 
-def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
+def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
     """Generates an HTML button that opens the PDF in a new browser tab for direct printing."""
     try:
         b64 = base64.b64encode(pdf_bytes).decode()
@@ -157,7 +159,7 @@ def _render_inv_editor(height=600):
     )
 
     c_s, c_sort, c_ord, c_show = st.columns([2, 2, 1, 1.5])
-    search     = c_s.text_input("🔍 Search", placeholder="Filter items...", key="inv_search")
+    search     = c_s.text_input("🔍 Search", placeholder="Filter items...", key="inv_search")
     sort_col   = c_sort.selectbox("Sort By", ["Name", "SKU", "Price", "WholesalePrice", "StockQty", "Cost"], key="inv_sort_col")
     sort_asc   = c_ord.radio("Dir", ["↑", "↓"], horizontal=True, key="inv_sort_dir") == "↑"
     show_inact = c_show.checkbox("Show Inactive Items", value=False, key="inv_show_inactive")
@@ -182,7 +184,7 @@ def _render_inv_editor(height=600):
             pass
 
     csv_export = view_df.to_csv(index=False).encode('utf-8')
-    st.download_button("🖨️ Export / Print This List (CSV)", data=csv_export,
+    st.download_button("🖨️ Export / Print This List (CSV)", data=csv_export,
                        file_name="inventory_export.csv", mime="text/csv", key="inv_export")
 
     with st.form("inv_editor"):
@@ -199,7 +201,7 @@ def _render_inv_editor(height=600):
                 "Cost":           st.column_config.NumberColumn(format="$%.2f"),
             }
         )
-        if st.form_submit_button("💾 Save Changes"):
+        if st.form_submit_button("💾 Save Changes"):
             full_inv.update(edited_df)
             deleted_idx = view_df.index.difference(edited_df.index)
             full_inv = full_inv.drop(index=deleted_idx, errors='ignore')
@@ -219,7 +221,7 @@ if 'data' not in st.session_state or not st.session_state['data']:
     with st.spinner("Connecting to Headquarters..."):
         st.session_state['data'] = db.get_data()
         if not st.session_state['data']:
-            st.warning("⚠️ Could not load data from Google Sheets. Check your connection or API limits.")
+            st.warning("⚠️ Could not load data from Google Sheets. Check your connection or API limits.")
             st.stop() # This halts the app so it doesn't crash on line 420!
 
 # --- AUTH GUARD: Unauthenticated users go to Kiosk ---
@@ -228,12 +230,12 @@ if not st.session_state.get('admin_authenticated'):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("## 🧵 Notion to Sew")
+    st.markdown("## 🧵 Notion to Sew")
     st.caption("Admin Portal")
     st.divider()
-    menu = st.radio("Navigate", ["📊 Dashboard", "📦 Inventory", "🛒 Checkout", "👥 Customers", "📝 Financials", "⚙️ Settings"])
+    menu = st.radio("Navigate", ["📊 Dashboard", "📦 Inventory", "🛒 Checkout", "👥 Customers", "📝 Financials", "⚙️ Settings"])
     st.divider()
-    if st.button("🔄 Refresh Database"):
+    if st.button("🔄 Refresh Database"):
         auto_refresh()
 
 # --- DATA INTEGRITY BANNER ---
@@ -247,7 +249,7 @@ try:
 except Exception:
     _problems = []
 if _problems:
-    st.error("⚠️ **Database problems detected — some numbers on this page may be wrong.**")
+    st.error("⚠️ **Database problems detected — some numbers on this page may be wrong.**")
     for _p in _problems:
         st.markdown(f"- {_p}")
     st.divider()
@@ -262,8 +264,8 @@ if st.session_state.get('inv_fullscreen'):
     #sheets-fab { display: none !important; }
     </style>""", unsafe_allow_html=True)
     _hdr, _exit = st.columns([4, 1])
-    _hdr.subheader("📋 Edit Inventory Database — Full Screen")
-    if _exit.button("✕ Exit Full Screen", use_container_width=True, type="primary"):
+    _hdr.subheader("📋 Edit Inventory Database — Full Screen")
+    if _exit.button("✕ Exit Full Screen", use_container_width=True, type="primary"):
         st.session_state['inv_fullscreen'] = False
         st.rerun()
     _render_inv_editor(height=900)
@@ -272,7 +274,7 @@ if st.session_state.get('inv_fullscreen'):
 # ==========================================
 # 1. DASHBOARD
 # ==========================================
-if menu == "📊 Dashboard":
+if menu == "📊 Dashboard":
     page_header("📊", "Dashboard", "Sales overview and recent activity")
     col_d1, col_d2 = st.columns(2)
     today = date.today()
@@ -330,18 +332,18 @@ if menu == "📊 Dashboard":
 # ==========================================
 # 2. INVENTORY
 # ==========================================
-elif menu == "📦 Inventory":
+elif menu == "📦 Inventory":
     page_header("📦", "Inventory", "Manage products, stock levels, and costs")
     
     # Refresh data ensuring 'Cost' column exists in DataFrame
     if 'Cost' not in st.session_state['data']['inventory'].columns:
         st.session_state['data']['inventory']['Cost'] = 0.0
     
-    tab1, tab2, tab3 = st.tabs(["🔄 Add / Restock", "📋 Edit Database", "📥 Bulk Import"])
+    tab1, tab2, tab3 = st.tabs(["🔄 Add / Restock", "📋 Edit Database", "📥 Bulk Import"])
     
     # --- TAB 1: SMART ADD/RESTOCK ---
     with tab1:
-        st.info("💡 Type a SKU below. If it exists, you can add stock. If it's new, you can create it.")
+        st.info("💡 Type a SKU below. If it exists, you can add stock. If it's new, you can create it.")
         
         # We use a distinct key for the lookup to avoid session state collisions
         lookup_sku = st.text_input("Scan or Type SKU", key="inv_sku_lookup").strip()
@@ -365,13 +367,13 @@ elif menu == "📦 Inventory":
                 st.caption(f"New Total Stock will be: {row['StockQty'] + qty_add}")
 
                 st.divider()
-                log_purchase = st.checkbox("📒 Also log as Inventory Purchase expense?", value=True,
+                log_purchase = st.checkbox("📒 Also log as Inventory Purchase expense?", value=True,
                                            help="Records total purchase cost in Expenses for accurate P&L reporting")
                 ex_c1, ex_c2 = st.columns(2)
                 ex_date = ex_c1.date_input("Purchase Date", value=date.today())
                 ex_desc = ex_c2.text_input("Description", value=f"Restocked {row['Name']} (SKU: {row['SKU']})")
 
-                if st.form_submit_button("➕ Update Stock & Cost", type="primary"):
+                if st.form_submit_button("➕ Update Stock & Cost", type="primary"):
                     db.restock_item(lookup_sku, qty_add, new_cost_val)
                     if log_purchase and new_cost_val > 0:
                         total_purchase = qty_add * new_cost_val
@@ -399,14 +401,14 @@ elif menu == "📦 Inventory":
                 new_cost = c6.number_input("Unit Cost ($)", 0.0, 1000.0, 0.0)
 
                 st.divider()
-                log_purchase_new = st.checkbox("📒 Also log as Inventory Purchase expense?", value=True,
+                log_purchase_new = st.checkbox("📒 Also log as Inventory Purchase expense?", value=True,
                                            key="new_item_log_purchase",
                                            help="Records total purchase cost in Expenses for accurate P&L reporting")
                 ex_c1_n, ex_c2_n = st.columns(2)
                 ex_date_n = ex_c1_n.date_input("Purchase Date", value=date.today(), key="new_item_ex_date")
                 ex_desc_n = ex_c2_n.text_input("Description", value=f"Initial Purchase for {lookup_sku}", key="new_item_ex_desc")
 
-                if st.form_submit_button("✅ Create Item", type="primary"):
+                if st.form_submit_button("✅ Create Item", type="primary"):
                     if new_name:
                         db.add_inventory_item(lookup_sku, new_name, new_price, new_stock, new_whol, new_cost)
 
@@ -421,7 +423,7 @@ elif menu == "📦 Inventory":
     # --- TAB 2: EDIT DATABASE ---
     with tab2:
         _fs_col, _ = st.columns([1, 5])
-        if _fs_col.button("⛶ Full Screen", key="inv_fs_open"):
+        if _fs_col.button("⛶ Full Screen", key="inv_fs_open"):
             st.session_state['inv_fullscreen'] = True
             st.rerun()
         _render_inv_editor(height=600)
@@ -431,11 +433,11 @@ elif menu == "📦 Inventory":
         # Added Cost to template
         sample_data = pd.DataFrame([{"SKU": "TEST-01", "Name": "Example Item", "Price": 5.00, "WholesalePrice": 2.50, "StockQty": 100, "Cost": 1.25}])
         csv_template = sample_data.to_csv(index=False).encode('utf-8')
-        st.download_button("⬇️ Download Template", data=csv_template, file_name="inventory_template.csv", mime="text/csv")
+        st.download_button("⬇️ Download Template", data=csv_template, file_name="inventory_template.csv", mime="text/csv")
         
         uploaded_file = st.file_uploader("Upload filled CSV", type="csv")
         if uploaded_file:
-            if st.button("🚀 Upload to Database"):
+            if st.button("🚀 Upload to Database"):
                 import_df = pd.read_csv(uploaded_file)
                 current_df = st.session_state['data']['inventory']
                 
@@ -452,17 +454,17 @@ elif menu == "📦 Inventory":
 # ==========================================
 # 3. CHECKOUT
 # ==========================================
-elif menu == "🛒 Checkout":
+elif menu == "🛒 Checkout":
     page_header("🛒", "Point of Sale", "Admin checkout with invoice + wholesale support")
 
     # --- SUCCESS STATE ---
     if st.session_state.get('checkout_complete'):
-        st.success(f"✅ Order #{st.session_state['last_order']['id']} Recorded Successfully!")
+        st.success(f"✅ Order #{st.session_state['last_order']['id']} Recorded Successfully!")
         
         c1, c2, c3, c4 = st.columns(4)
         
         # 1. View Invoice
-        if c1.button("👁️ View Invoice", use_container_width=True):
+        if c1.button("👁️ View Invoice", use_container_width=True):
             st.session_state['view_last_invoice'] = True
         
         # 2. Download & Print
@@ -470,7 +472,7 @@ elif menu == "🛒 Checkout":
         with c2:
             _get_pdf_print_button(pdf_data)
             st.download_button(
-                "📄 Download PDF",
+                "📄 Download PDF",
                 data=pdf_data,
                 file_name=f"Invoice_{st.session_state['last_order']['id']}.pdf",
                 mime="application/pdf",
@@ -479,7 +481,7 @@ elif menu == "🛒 Checkout":
 
         # 3. Email Receipt
         with c3:
-            with st.popover("📧 Email Receipt", use_container_width=True):
+            with st.popover("📧 Email Receipt", use_container_width=True):
                 # Try to get customer email if available
                 # Note: last_order currently only stores id and pdf. 
                 # We might need to store the email too or look it up.
@@ -494,7 +496,7 @@ elif menu == "🛒 Checkout":
                     else: st.error("Email required.")
 
         # 4. New Sale
-        if c4.button("✨ New Sale", type="primary", use_container_width=True):
+        if c4.button("✨ New Sale", type="primary", use_container_width=True):
             st.session_state['checkout_complete'] = False
             st.session_state['view_last_invoice'] = False
             st.session_state['last_order'] = None
@@ -507,7 +509,7 @@ elif menu == "🛒 Checkout":
             # Increased Width and Height significantly
             pdf_viewer(input=st.session_state['last_order']['pdf'], width=1000, height=1000)
             
-            if st.button("❌ Close Preview"):
+            if st.button("❌ Close Preview"):
                 st.session_state['view_last_invoice'] = False
                 st.rerun()
 
@@ -659,7 +661,7 @@ elif menu == "🛒 Checkout":
                                 st.session_state['co_effective_tax_rate'] = new_eff_rate
                                 st.rerun()
                             if cust_is_wholesale:
-                                st.info("🏭 Wholesale customer — wholesale pricing auto-applied")
+                                st.info("🏭 Wholesale customer — wholesale pricing auto-applied")
                         else:
                             if st.session_state.get('co_last_cust') is not None:
                                 st.session_state['co_last_cust'] = None
@@ -678,7 +680,7 @@ elif menu == "🛒 Checkout":
 
                     credit_applied = 0.0
                     if selected_cust and cust_credit > 0:
-                        st.info(f"💎 **Credit Available: ${cust_credit:.2f}**")
+                        st.info(f"💎 **Credit Available: ${cust_credit:.2f}**")
                         if st.checkbox("Apply Store Credit?"):
                             max_apply = min(cust_credit, cart_total)
                             credit_applied = st.number_input("Amount to apply", 0.0, max_apply, max_apply)
@@ -697,7 +699,7 @@ elif menu == "🛒 Checkout":
                     if pay_method == "Venmo" and venmo_user:
                         st.image(f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://venmo.com/u/{venmo_user}", width=150, caption=f"@{venmo_user}")
 
-                    if st.button("✅ Complete Order", type="primary", use_container_width=True):
+                    if st.button("✅ Complete Order", type="primary", use_container_width=True):
                         if selected_cust or pay_method == "Cash": # Allow Cash Guest checkout
                             # Handle Guest
                             if not selected_cust: cust_id = "Guest"; selected_cust = "Guest"
@@ -712,7 +714,7 @@ elif menu == "🛒 Checkout":
                                 except Exception as e:
                                     # Never leave the cart in a state where the sale
                                     # looks complete but nothing was written.
-                                    st.error(f"❌ **The sale was not saved.** {e}")
+                                    st.error(f"❌ **The sale was not saved.** {e}")
                                     st.warning("Your cart has been kept — try Complete Order again.")
                                     st.stop()
 
@@ -743,7 +745,7 @@ elif menu == "🛒 Checkout":
 # ==========================================
 # 4. CUSTOMERS (Card View & CRM)
 # ==========================================
-elif menu == "👥 Customers":
+elif menu == "👥 Customers":
     page_header("👥", "Customers", "CRM — profiles, purchase history, and store credit")
     
     # Initialize Session State for Navigation
@@ -770,11 +772,11 @@ elif menu == "👥 Customers":
         c_search, c_add = st.columns([3, 1], vertical_alignment="bottom")
         
         # Search Bar
-        search_q = c_search.text_input("🔍 Search Customers", placeholder="Name or Phone...")
+        search_q = c_search.text_input("🔍 Search Customers", placeholder="Name or Phone...")
         
         # Add Button (Now aligned)
         with c_add:
-            with st.popover("➕ New Customer", use_container_width=True):
+            with st.popover("➕ New Customer", use_container_width=True):
                 with st.form("quick_create_cust"):
                     n_n = st.text_input("Name")
                     n_e = st.text_input("Email")
@@ -798,38 +800,61 @@ elif menu == "👥 Customers":
         else:
             filtered_df = df_cust
             
-        # 3. Render Cards (Grid Layout)
-        # We use a loop to create rows of 3 columns
+        # 3. Render the list
+        # One compact row per customer rather than a full-height card: the book
+        # runs to 200+ names, and tall cards made it a scroll marathon to reach
+        # anyone past the B's. Long lists are paged so a rerun stays cheap.
         if filtered_df.empty:
             st.info("No customers found.")
         else:
             # Sort customers alphabetically by name
             filtered_df = filtered_df.sort_values(by="Name")
-            
+
+            PAGE_SIZE = 25
+            total = len(filtered_df)
+            pages = max(1, -(-total // PAGE_SIZE))
+            page = 1
+            if pages > 1:
+                c_count, c_page = st.columns([2, 1], vertical_alignment="center")
+                c_count.caption(f"{total} customers — showing {PAGE_SIZE} at a time. "
+                                "Search above to jump straight to someone.")
+                page = c_page.number_input("Page", 1, pages, 1, key="cust_page",
+                                           label_visibility="collapsed")
+            else:
+                st.caption(f"{total} customer{'s' if total != 1 else ''}")
+            filtered_df = filtered_df.iloc[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
+
             for i, row in filtered_df.iterrows():
-                # Create a card-like container
                 with st.container(border=True):
-                    c_info, c_cred, c_btn = st.columns([3, 1, 1])
-                    
-                    # Info
+                    c_info, c_cred, c_btn = st.columns([5, 2, 2], vertical_alignment="center")
+
+                    # Info — name and contact on two tight lines
                     with c_info:
-                        st.subheader(row['Name'])
                         ph = format_us_phone(row['Phone'])
-                        st.caption(f"📞 {ph if ph else 'No Phone'} | 📧 {row['Email']}")
-                    
+                        email = str(row.get('Email', '') or '').strip()
+                        bits = [ph if ph else "no phone"] + ([email] if email else [])
+                        st.markdown(
+                            f"**{row['Name']}**  \n"
+                            f"<span style='color:#7A736A;font-size:0.85em'>{' · '.join(bits)}</span>",
+                            unsafe_allow_html=True,
+                        )
+
                     # Credit Badge
                     with c_cred:
                         try: cred = float(row.get('Credit', 0) if row.get('Credit') != "" else 0)
                         except: cred = 0.0
                         if cred > 0:
-                            st.metric("Credit", f"${cred:.2f}")
-                        else:
-                            st.write("") # Spacer
-                    
+                            st.markdown(
+                                f"<div style='text-align:right'><span style='background:#E7F1ED;"
+                                f"color:#14503F;padding:2px 10px;border-radius:999px;"
+                                f"font-size:0.85em;font-weight:600'>${cred:,.2f} credit</span></div>",
+                                unsafe_allow_html=True,
+                            )
+
                     # Manage Button
                     with c_btn:
-                        st.write("") # Vertical alignment spacer
-                        if st.button("Manage ➝", key=f"btn_m_{i}_{row['CustomerID']}"):
+                        if st.button("Manage →", key=f"btn_m_{i}_{row['CustomerID']}",
+                                     use_container_width=True):
                             st.session_state['active_cust_id'] = row['CustomerID']
                             # Remember the row too: CustomerID alone is not reliably
                             # unique, and looking the profile up by ID can open the
@@ -863,7 +888,7 @@ elif menu == "👥 Customers":
             if len(df_cust[mask]) > 1:
                 sharers = ", ".join(df_cust[mask]['Name'].astype(str))
                 st.error(
-                    f"⚠️ **CustomerID {cid} is shared by {len(df_cust[mask])} customers "
+                    f"⚠️ **CustomerID {cid} is shared by {len(df_cust[mask])} customers "
                     f"({sharers}).** The history and store credit below are the *combined* "
                     "totals for all of them, and edits here may save to the wrong one. "
                     "Give each customer a unique CustomerID in the Customers sheet to fix this."
@@ -871,7 +896,7 @@ elif menu == "👥 Customers":
 
             # --- HEADER ---
             c_back, c_title = st.columns([1, 5])
-            if c_back.button("⬅️ Back"):
+            if c_back.button("⬅️ Back"):
                 st.session_state['active_cust_id'] = None
                 st.session_state['active_cust_row'] = None
                 st.rerun()
@@ -897,7 +922,7 @@ elif menu == "👥 Customers":
                         u_notes = st.text_area("Notes", value=str(row.get('Notes', "")))
                         st.divider()
                         u_wholesale = st.checkbox(
-                            "🏭 Wholesale Customer",
+                            "🏭 Wholesale Customer",
                             value=str(row.get('IsWholesale', '')).strip().upper() == 'TRUE',
                             help="Auto-applies wholesale pricing and no tax at checkout"
                         )
@@ -913,7 +938,7 @@ elif menu == "👥 Customers":
                             value=float(display_rate), step=0.001, format="%.3f",
                             help="Overrides the global tax rate for this customer only."
                         )
-                        if st.form_submit_button("💾 Save Changes"):
+                        if st.form_submit_button("💾 Save Changes"):
                             tax_override_decimal = u_tax_override / 100.0 if u_tax_override > 0 else None
                             # update_customer_details swallows its errors and returns
                             # False; reporting "Saved!" regardless hides lost edits.
@@ -923,11 +948,11 @@ elif menu == "👥 Customers":
                                 st.success("Saved!")
                                 auto_refresh()
                             else:
-                                st.error("❌ Not saved — the database rejected the change. "
+                                st.error("❌ Not saved — the database rejected the change. "
                                          "Check your connection and try again.")
                     
                     st.write("")
-                    with st.expander("🗑️ Delete Profile"):
+                    with st.expander("🗑️ Delete Profile"):
                         if len(df_cust[mask]) > 1:
                             # Deleting by ID removes whichever row comes first in the
                             # sheet, which may well be the other customer.
@@ -944,7 +969,7 @@ elif menu == "👥 Customers":
                                     st.success("Deleted.")
                                     auto_refresh()
                                 else:
-                                    st.error("❌ Not deleted — the database rejected the change.")
+                                    st.error("❌ Not deleted — the database rejected the change.")
 
                 st.divider()
                 
@@ -953,12 +978,12 @@ elif menu == "👥 Customers":
                 except: raw_cred = 0.0
                 st.metric("Store Credit Balance", f"${raw_cred:,.2f}")
                 
-                with st.expander("🎁 Sell Gift Certificate / Add Credit"):
+                with st.expander("🎁 Sell Gift Certificate / Add Credit"):
                     giver_lookup = st.selectbox("Who is paying?", ["Self (Same Person)"] + list(df_cust['Name']), index=0)
                     gc_amount = st.number_input("Amount ($)", 0.0, 5000.0, 50.0, step=10.0)
                     gc_pay_method = st.selectbox("Payment Method", ["Cash", "Card", "Venmo", "Check"])
                     
-                    if st.button("💸 Add Credit", type="primary"):
+                    if st.button("💸 Add Credit", type="primary"):
                         if giver_lookup == "Self (Same Person)": giver_id = cid
                         else: giver_id = df_cust[df_cust['Name'] == giver_lookup].iloc[0]['CustomerID']
                         with st.spinner("Processing..."):
@@ -1027,14 +1052,14 @@ elif menu == "👥 Customers":
                 for i, t_row in my_trans.iterrows():
                     if st.session_state.get(f"view_inv_{t_row['TransactionID']}", False):
                         with preview_slot.container(border=True):
-                            if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
+                            if st.button("❌ Close Preview", key=f"cls_{t_row['TransactionID']}_{i}"):
                                 st.session_state[f"view_inv_{t_row['TransactionID']}"] = False
                                 st.rerun()
                             t_id = str(t_row['TransactionID'])
                             pdf_bytes = _build_invoice_pdf(t_id, row['Name'])
                             _get_pdf_print_button(pdf_bytes)
                             st.download_button(
-                                "🖨️ Download PDF",
+                                "🖨️ Download PDF",
                                 data=pdf_bytes,
                                 file_name=f"Invoice_{t_id}.pdf",
                                 mime="application/pdf",
@@ -1047,9 +1072,9 @@ elif menu == "👥 Customers":
 # ==========================================
 # 5. FINANCIALS
 # ==========================================
-elif menu == "📝 Financials":
+elif menu == "📝 Financials":
     page_header("📝", "Financial Reports", "Income statement, tax liability, top sellers, and A/R")
-    tab1, tab2, tab3, tab4 = st.tabs(["💰 Income Statement", "🏛️ Sales Tax", "📈 Top Sellers", "⏳ Unpaid"])
+    tab1, tab2, tab3, tab4 = st.tabs(["💰 Income Statement", "🏛️ Sales Tax", "📈 Top Sellers", "⏳ Unpaid"])
     
 # --- TAB 1: INCOME STATEMENT (New!) ---
     with tab1:
@@ -1060,7 +1085,7 @@ elif menu == "📝 Financials":
         r_start = c1.date_input("Start Date", value=date(date.today().year, 1, 1), key="r_start")
         r_end = c2.date_input("End Date", value=date.today(), key="r_end")
         
-        if st.button("📊 Generate Report"):
+        if st.button("📊 Generate Report"):
             # A. Prepare Data
             df_trans = st.session_state['data']['transactions'].copy()
             df_items = st.session_state['data']['items'].copy()
@@ -1136,7 +1161,7 @@ elif menu == "📝 Financials":
                 merged_items['Cost'] = pd.to_numeric(merged_items['Cost'], errors='coerce')
                 no_cost_skus = merged_items[merged_items['Cost'].isna() | (merged_items['Cost'] == 0)]['SKU'].unique()
                 if len(no_cost_skus) > 0:
-                    st.warning(f"⚠️ COGS may be understated: {len(no_cost_skus)} SKU(s) sold in this period have no unit cost entered. Set costs in Inventory to improve accuracy.")
+                    st.warning(f"⚠️ COGS may be understated: {len(no_cost_skus)} SKU(s) sold in this period have no unit cost entered. Set costs in Inventory to improve accuracy.")
                 merged_items['LineCost'] = merged_items['QtySold'] * merged_items['Cost'].fillna(0)
                 total_cogs = merged_items['LineCost'].sum()
             else: total_cogs = 0.0
@@ -1151,7 +1176,7 @@ elif menu == "📝 Financials":
             invoices_no_items = [tid for tid in valid_ids if tid not in product_item_ids]
             if invoices_no_items:
                 st.warning(
-                    f"⚠️ {len(invoices_no_items)} invoice(s) in this period have no matching line item records "
+                    f"⚠️ {len(invoices_no_items)} invoice(s) in this period have no matching line item records "
                     f"and contribute $0 to COGS. This is common for old imported invoices. "
                     f"Invoice IDs: {', '.join(invoices_no_items[:10])}{'…' if len(invoices_no_items) > 10 else ''}"
                 )
@@ -1195,7 +1220,7 @@ elif menu == "📝 Financials":
             pdf_viewer(input=pdf_data, width=1000, height=1000)
             
             st.download_button(
-                "⬇️ Download PDF", data=pdf_data,
+                "⬇️ Download PDF", data=pdf_data,
                 file_name=f"IncomeStatement_{r_start}_{r_end}.pdf",
                 mime="application/pdf", type="primary", use_container_width=True
             )
@@ -1203,7 +1228,7 @@ elif menu == "📝 Financials":
 
         # --- LOG AN EXPENSE (always visible, outside Generate button) ---
         st.divider()
-        with st.expander("➕ Log an Expense"):
+        with st.expander("➕ Log an Expense"):
             if 'settings' in st.session_state['data']:
                 s_df = st.session_state['data']['settings']
                 s_dict = dict(zip(s_df['Key'], s_df['Value']))
@@ -1219,7 +1244,7 @@ elif menu == "📝 Financials":
                 ex_c3, ex_c4 = st.columns(2)
                 ex_amount = ex_c3.number_input("Amount ($)", 0.01, 100000.0, 10.0, key="ex_amount")
                 ex_desc = ex_c4.text_input("Description", placeholder="e.g. Fabric from JoAnn", key="ex_desc")
-                if st.form_submit_button("💾 Save Expense", type="primary"):
+                if st.form_submit_button("💾 Save Expense", type="primary"):
                     db.add_expense(ex_date, ex_cat, ex_amount, ex_desc)
                     st.success(f"Logged ${ex_amount:.2f} under {ex_cat}.")
                     auto_refresh()
@@ -1250,7 +1275,7 @@ elif menu == "📝 Financials":
 
     # --- TAB 3: TOP SELLERS (Product Focused) ---
     with tab3:
-        st.header("🏆 Product Performance")
+        st.header("🏆 Product Performance")
         
         # 1. Controls
         c1, c2, c3 = st.columns([1, 1, 2])
@@ -1315,14 +1340,14 @@ elif menu == "📝 Financials":
                 chart_color = "#3498db" # Blue
             
             # --- VISUALIZATION: TOP 10 CHART ---
-            st.subheader(f"📊 Top 10 by {rank_by.split('(')[0].strip()}")
+            st.subheader(f"📊 Top 10 by {rank_by.split('(')[0].strip()}")
             top_10 = sorted_df.head(10).set_index('Name')
             st.bar_chart(top_10[metric_col], color=chart_color)
             
             st.divider()
 
             # --- DETAILED TABLE ---
-            st.subheader("📋 Product Leaderboard")
+            st.subheader("📋 Product Leaderboard")
             st.dataframe(
                 sorted_df.head(50), # Showing top 50 rows
                 use_container_width=True,
@@ -1345,7 +1370,7 @@ elif menu == "📝 Financials":
         df_cust = st.session_state['data']['customers']
         df_items = st.session_state['data']['items']
         pending = df_trans[df_trans['Status'].astype(str).str.strip().str.lower().isin(['pending', 'unpaid', 'open'])].copy()
-        if pending.empty: st.success("🎉 All invoices are paid!")
+        if pending.empty: st.success("🎉 All invoices are paid!")
         else:
             if not df_cust.empty:
                 pending['CustomerID'] = pending['CustomerID'].astype(str)
@@ -1358,7 +1383,7 @@ elif menu == "📝 Financials":
                 if shared.any():
                     lookup.loc[shared, 'Name'] = (
                         lookup[shared].groupby('CustomerID')['Name']
-                        .transform(lambda s: " / ".join(s.astype(str)) + " ⚠️ shared ID")
+                        .transform(lambda s: " / ".join(s.astype(str)) + " ⚠️ shared ID")
                     )
                 lookup = lookup.drop_duplicates(subset='CustomerID', keep='first')
                 merged = pending.merge(lookup, on='CustomerID', how='left')
@@ -1383,7 +1408,7 @@ elif menu == "📝 Financials":
                 # Previewer (Unpaid Report)
                 if st.session_state.get(f"view_inv_{row['TransactionID']}", False):
                     with st.container(border=True):
-                        if st.button("❌ Close", key=f"uclose_{row['TransactionID']}_{i}"):
+                        if st.button("❌ Close", key=f"uclose_{row['TransactionID']}_{i}"):
                             st.session_state[f"view_inv_{row['TransactionID']}"] = False
                             st.rerun()
 
@@ -1393,7 +1418,7 @@ elif menu == "📝 Financials":
                         
                         # 2. Download Button
                         st.download_button(
-                            "🖨️ Download Invoice", 
+                            "🖨️ Download Invoice", 
                             data=pdf_bytes,
                             file_name=f"Invoice_{t_id}.pdf",
                             mime="application/pdf",
@@ -1408,7 +1433,7 @@ elif menu == "📝 Financials":
 # ==========================================
 # 6. SETTINGS
 # ==========================================
-elif menu == "⚙️ Settings":
+elif menu == "⚙️ Settings":
     page_header("⚙️", "Settings", "Company info, tax rate, invoice numbering")
     
     # Load Settings
@@ -1422,21 +1447,21 @@ elif menu == "⚙️ Settings":
         
         # COLUMN 1: Company Info
         with col1:
-            st.subheader("🏢 Company Info")
+            st.subheader("🏢 Company Info")
             c_name = st.text_input("Company Name", value=settings_dict.get("CompanyName", "Notion to Sew"))
             c_addr = st.text_area("Address", value=settings_dict.get("Address", "Modesto, CA"))
             
-            st.subheader("💰 Financials")
+            st.subheader("💰 Financials")
             venmo_user = st.text_input("Venmo Username", value=settings_dict.get("VenmoUser", ""))
             
         # COLUMN 2: Operations
         with col2:
-            st.subheader("⚙️ Operations")
+            st.subheader("⚙️ Operations")
             # Tax Rate Logic
             raw_val = settings_dict.get("TaxRate", "0.08")
             try:
                 clean_val = float(str(raw_val).replace("%", "").strip())
-                # Normalize: stored as decimal (0.0875) → display as 8.75; stored as percent (8.75) → display as 8.75
+                # Normalize: stored as decimal (0.0875) → display as 8.75; stored as percent (8.75) → display as 8.75
                 display_rate = clean_val * 100 if clean_val < 1.0 else clean_val
             except ValueError:
                 display_rate = 8.0
@@ -1453,14 +1478,14 @@ elif menu == "⚙️ Settings":
             
             # NEW: Expense Categories Management
             st.divider()
-            st.markdown("### 🏷️ Expense Categories")
+            st.markdown("### 🏷️ Expense Categories")
             st.caption("Separate categories with commas.")
             default_cats = "Fabric, Notions, Rent, Marketing, Shipping, Wages, Other"
             current_cats = settings_dict.get("ExpenseCategories", default_cats)
             new_cats = st.text_area("Categories", value=current_cats, height=100)
 
         st.divider()
-        if st.form_submit_button("💾 Save All Settings", type="primary"):
+        if st.form_submit_button("💾 Save All Settings", type="primary"):
             decimal_rate = new_rate_percent / 100
             
             # Clean up the categories list (remove extra spaces)
@@ -1475,5 +1500,5 @@ elif menu == "⚙️ Settings":
                 "ExpenseCategories": clean_cats_str  # Saving the new list
             }
             db.update_settings(updates)
-            st.success("✅ Settings Saved!")
+            st.success("✅ Settings Saved!")
             auto_refresh()

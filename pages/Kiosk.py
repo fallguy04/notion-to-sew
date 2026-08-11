@@ -22,12 +22,12 @@ st.markdown("""
 <style>
     /* Global Styles */
     .main {
-        background-color: #fcfaf9;
+        background-color: #FAF7F2;
     }
     
     /* Hero Banner - Much Slimmer */
     .hero-container {
-        background: linear-gradient(135deg, #5d6d7e 0%, #85929e 100%);
+        background: linear-gradient(135deg, #1F6E5A 0%, #2F8A73 100%);
         padding: 0.8rem 1rem;
         border-radius: 0.8rem;
         color: white;
@@ -49,7 +49,7 @@ st.markdown("""
     /* Dominant Search Box Styling */
     div[data-baseweb="select"] {
         border-radius: 1.2rem !important;
-        border: 2px solid #5d6d7e !important;
+        border: 2px solid #1F6E5A !important;
         height: 80px !important;
         display: flex !important;
         align-items: center !important;
@@ -85,7 +85,7 @@ st.markdown("""
         font-weight: 700;
         margin-top: 1.5rem;
         margin-bottom: 0.8rem;
-        color: #2c3e50;
+        color: #2A2724;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -101,12 +101,12 @@ if 'show_admin_login' not in st.session_state: st.session_state['show_admin_logi
 def go_home(): st.session_state['page'] = 'shop'
 def go_checkout(): st.session_state['page'] = 'checkout'
 
-def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
+def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
     try:
         b64 = base64.b64encode(pdf_bytes).decode()
         html = f"""
             <a href="data:application/pdf;base64,{b64}" target="_blank" style="text-decoration: none;">
-                <button style="width: 100%; background-color: #FF4B4B; color: white; padding: 0.5rem 1rem; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; font-size: 1rem; margin-top: 10px; margin-bottom: 10px;">
+                <button style="width: 100%; background-color: #1F6E5A; color: white; padding: 0.5rem 1rem; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; font-size: 1rem; margin-top: 10px; margin-bottom: 10px;">
                     {label}
                 </button>
             </a>
@@ -116,7 +116,7 @@ def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
 
 # --- STAFF ACCESS (RESTORED) ---
 with st.sidebar:
-    st.markdown("### 🔐 Staff Access")
+    st.markdown("### 🔐 Staff Access")
     st.caption("Enter your PIN to open the Admin portal.")
     pin_input = st.text_input("PIN", type="password", label_visibility="collapsed", placeholder="Enter PIN")
     if st.button("Unlock Admin ➝", use_container_width=True):
@@ -171,7 +171,7 @@ if st.session_state['page'] == 'shop':
         "Find Items",
         df['lookup'],
         index=None,
-        placeholder="🔍  START TYPING TO SEARCH ITEMS...",
+        placeholder="🔍  START TYPING TO SEARCH ITEMS...",
         label_visibility="collapsed",
         key="kiosk_item_search"
     )
@@ -186,7 +186,7 @@ if st.session_state['page'] == 'shop':
             st.markdown("### Item found:")
 
     with c_cart:
-        btn_label = f"🛒 CART ({cart_count})" if cart_count > 0 else "🛒 CART (0)"
+        btn_label = f"🛒 CART ({cart_count})" if cart_count > 0 else "🛒 CART (0)"
         if st.button(btn_label, type="primary", use_container_width=True, disabled=cart_count == 0):
             go_checkout()
             st.rerun()
@@ -260,11 +260,11 @@ if st.session_state['page'] == 'shop':
 # ==========================================
 elif st.session_state['page'] == 'checkout':
     st.title("Checkout")
-    if st.button("⬅️ Back to Shop", use_container_width=True):
+    if st.button("⬅️ Back to Shop", use_container_width=True):
         go_home(); st.rerun()
     st.divider()
 
-    st.subheader("👤 Step 1: Who is checking out?")
+    st.subheader("👤 Step 1: Who is checking out?")
     cust_tab1, cust_tab2 = st.tabs(["Search Name", "New Customer"])
     selected_cust_name = None; cust_row = None
 
@@ -305,7 +305,7 @@ elif st.session_state['page'] == 'checkout':
                 else: st.error("Name required.")
 
     st.divider()
-    st.subheader("🛒 Step 2: Your Items")
+    st.subheader("🛒 Step 2: Your Items")
     if not st.session_state['kiosk_cart']:
         st.info("Cart is empty.")
     else:
@@ -361,18 +361,18 @@ elif st.session_state['page'] == 'checkout':
                 checkout_cart.append({**item, 'price': eff_price, 'qty': new_q})
 
         st.divider()
-        st.subheader("💰 Step 3: Total & Payment")
+        st.subheader("💰 Step 3: Total & Payment")
         subtotal = sum(i['qty'] * i['price'] for i in checkout_cart)
         tax_amt = 0.0 if cust_is_wholesale else subtotal * clean_rate
         total = subtotal + tax_amt
 
         col_tot1, col_tot2 = st.columns([1, 1])
         with col_tot1:
-            if cust_is_wholesale: st.info("🏭 Wholesale customer — pricing applied, no tax")
+            if cust_is_wholesale: st.info("🏭 Wholesale customer — pricing applied, no tax")
             st.write(f"Subtotal: ${subtotal:.2f}"); st.write(f"Tax: ${tax_amt:.2f}")
             credit_applied = 0.0
             if cust_row is not None and cust_credit > 0:
-                st.info(f"💎 You have **${cust_credit:.2f}** credit!")
+                st.info(f"💎 You have **${cust_credit:.2f}** credit!")
                 if st.checkbox("Apply Credit?"):
                     credit_applied = min(cust_credit, total)
                     st.write(f"Applied: -${credit_applied:.2f}")
@@ -381,13 +381,13 @@ elif st.session_state['page'] == 'checkout':
         with col_tot2:
             pay_method = st.radio("Payment Method", ["Cash", "Venmo", "Pay Later (Invoice)"], horizontal=True)
             if not selected_cust_name:
-                st.error("⚠️ Please search for your name or create a profile in Step 1."); can_finish = False
+                st.error("⚠️ Please search for your name or create a profile in Step 1."); can_finish = False
             else: can_finish = True
 
             if pay_method == "Venmo" and venmo_user:
                 st.image(f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://venmo.com/u/{venmo_user}", width=150)
 
-            if st.button("✅ Finish Sale", type="primary", use_container_width=True, disabled=not can_finish):
+            if st.button("✅ Finish Sale", type="primary", use_container_width=True, disabled=not can_finish):
                 try:
                     cust_display = selected_cust_name or "Guest"
                     status = "Pending" if pay_method == "Pay Later (Invoice)" else "Paid"
@@ -405,7 +405,7 @@ elif st.session_state['page'] == 'checkout':
                         # a blanket refresh here re-downloads the whole workbook.
                         st.rerun()
                 except Exception as e:
-                    st.error(f"❌ **The sale was not saved.** {e}")
+                    st.error(f"❌ **The sale was not saved.** {e}")
                     st.warning("The cart has been kept — please try Finish Sale again, "
                                "or ask for help.")
 
@@ -420,12 +420,12 @@ elif st.session_state['page'] == 'success':
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         with st.container(border=True):
-            st.markdown("# ✅ Thank You!")
+            st.markdown("# ✅ Thank You!")
             st.subheader(f"Order #{order.get('id', '')} · ${order.get('total', 0):.2f}")
         
         st.write("")
         with st.container(border=True):
-            st.subheader("📧 Email Receipt")
+            st.subheader("📧 Email Receipt")
             if order.get('email_sent'): st.success(f"Receipt sent to **{order.get('receipt_email')}**")
             else:
                 st.text_input("Enter Email", value=order.get('customer_email', ''), key="kiosk_receipt_email")
@@ -442,11 +442,11 @@ elif st.session_state['page'] == 'success':
 
         st.write("")
         with st.container(border=True):
-            st.subheader("🖨️ In-Store Print")
+            st.subheader("🖨️ In-Store Print")
             if order.get('pdf'):
                 _get_pdf_print_button(order['pdf'], label="Open / Print Receipt Now")
-                st.download_button("💾 Save PDF", data=order['pdf'], file_name=f"Receipt_{order.get('id', 'order')}.pdf", mime="application/pdf", use_container_width=True)
+                st.download_button("💾 Save PDF", data=order['pdf'], file_name=f"Receipt_{order.get('id', 'order')}.pdf", mime="application/pdf", use_container_width=True)
 
             st.write("")
-            if st.button("🏠 Start New Order", type="primary", use_container_width=True):
+            if st.button("🏠 Start New Order", type="primary", use_container_width=True):
                 st.session_state['last_kiosk_order'] = None; go_home(); st.rerun()

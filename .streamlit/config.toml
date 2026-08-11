@@ -1,6 +1,55 @@
 [theme]
-primaryColor = "#1a73e8"
-backgroundColor = "#f8f9fa"
-secondaryBackgroundColor = "#ffffff"
-textColor = "#202124"
-font = "sans serif"
+# A notions shop, not a SaaS dashboard. Warm paper ground, deep spruce accent,
+# generous type. Every colour here is checked for AA contrast against the
+# surface it sits on.
+base = "light"
+
+primaryColor            = "#1F6E5A"   # deep spruce — 6.3:1 on white
+backgroundColor         = "#FAF7F2"   # warm linen
+secondaryBackgroundColor = "#FFFFFF"  # cards lift off the linen
+textColor               = "#2A2724"   # warm near-black, softer than #000
+linkColor               = "#1A5D4C"
+borderColor             = "#E6DED3"
+dataframeBorderColor    = "#E6DED3"
+dataframeHeaderBackgroundColor = "#F3EEE6"
+codeBackgroundColor     = "#F3EEE6"
+
+# Bigger default text. This is used all day by someone who does not want to
+# squint at a spreadsheet, and Streamlit's 14px default is small for that.
+baseFontSize = 16
+baseFontWeight = 400
+font = "ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+headingFont = "ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+
+# Softer geometry — less "admin panel", more "shop counter".
+baseRadius   = "0.7rem"
+buttonRadius = "0.6rem"
+showWidgetBorder = true
+showSidebarBorder = true
+
+# Semantic colours, warmed to match the ground so success/warning banners stop
+# looking like they were pasted in from a different application.
+greenColor            = "#1F6E5A"
+greenBackgroundColor  = "#E7F1ED"
+greenTextColor        = "#14503F"
+redColor              = "#A63A32"
+redBackgroundColor    = "#FBEAE7"
+redTextColor          = "#7E2B25"
+orangeColor           = "#B4761E"
+orangeBackgroundColor = "#FBF0DE"
+orangeTextColor       = "#7E5312"
+blueColor             = "#2C5F8A"
+blueBackgroundColor   = "#E8EFF6"
+blueTextColor         = "#1E4463"
+
+# Charts inherit the palette instead of the default primary-colour ramp.
+chartCategoricalColors = ["#1F6E5A", "#B4761E", "#2C5F8A", "#A63A32", "#6B7F5E", "#8A6D3B"]
+chartSequentialColors  = ["#E7F1ED", "#C6DED5", "#A3CABC", "#7FB5A3", "#5A9F8A", "#3B8770", "#1F6E5A", "#14503F", "#0B3A2D"]
+
+[theme.sidebar]
+# Slightly deeper than the page so the nav reads as a distinct surface.
+backgroundColor          = "#F3EEE6"
+secondaryBackgroundColor = "#FFFFFF"
+borderColor              = "#E0D6C8"
+primaryColor             = "#1F6E5A"
+textColor                = "#2A2724"
