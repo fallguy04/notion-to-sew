@@ -2,9 +2,26 @@
 
 import { useState } from "react";
 import PinDialog from "./pin-dialog";
+import { useHydrated } from "@/components/hydrated";
 
+/**
+ * `?locked=1` is set when the admin layout turned someone away — either their
+ * eight-hour session ran out or they typed the URL directly. Opening the PIN
+ * dialog straight away saves a click at the one moment it is most annoying.
+ *
+ * Read from the browser rather than from searchParams on purpose: this page is
+ * statically prerendered so it survives a wifi drop, and reading the query
+ * string on the server would make it render per request.
+ */
 export default function AdminCard() {
-  const [open, setOpen] = useState(false);
+  const hydrated = useHydrated();
+  const [choice, setChoice] = useState<"auto" | "open" | "closed">("auto");
+
+  const locked =
+    hydrated && new URLSearchParams(window.location.search).get("locked") === "1";
+  const open = choice === "open" || (choice === "auto" && locked);
+  const setOpen = (v: boolean) => setChoice(v ? "open" : "closed");
+
   return (
     <>
       <button

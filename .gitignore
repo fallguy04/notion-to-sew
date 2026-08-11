@@ -18,3 +18,11 @@ db/migration_payload.json
 
 # local-only secrets (Neon, etc) — never committed
 .env.local
+
+# Next.js / node (the web/ front end)
+node_modules/
+web/.next/
+web/out/
+web/.vercel/
+next-env.d.ts
+*.tsbuildinfo

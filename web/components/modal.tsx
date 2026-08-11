@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useHydrated } from "./hydrated";
 
 /**
  * Renders into document.body rather than in place.
@@ -26,8 +27,7 @@ export default function Modal({
   labelledBy?: string;
   children: React.ReactNode;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const hydrated = useHydrated();
 
   // The page behind a modal should not scroll under it.
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  if (!mounted) return null;
+  if (!hydrated) return null;
 
   return createPortal(
     <div

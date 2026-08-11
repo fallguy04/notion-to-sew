@@ -65,6 +65,85 @@ trusts a stale number.
 
 ---
 
+## DONE: the new front end (2026-08-11)
+
+`web/` is a complete Next.js replacement for both Streamlit screens, on the same
+Postgres database. Every feature of `Home.py` and `pages/Kiosk.py` is present.
+See `web/README.md` for how it fits together.
+
+What changed on purpose rather than being ported as-is:
+
+| Old | New | Why |
+|---|---|---|
+| Restock by typing a SKU, offering to create one if it didn't match | Searchable picker; creating an item is a separate action | That box is what put four different books under the SKU "Book" |
+| Checkout asked for the customer **last** | Asks **first** | Wholesale pricing, tax rate and store credit all depend on who is buying; everything before that was a guess |
+| Payment options: Cash / Card / Venmo / Invoice | …plus **Check** | 826 of 1,374 historical invoices were paid by check, and the old screen couldn't record one |
+| Free-form spreadsheet grid over the whole inventory | Bulk edit of prices, costs and counts only | Identity stays fixed; a stock change is written to the ledger as a counted adjustment instead of overwriting a cell |
+| "Next Invoice ID" as an editable setting | Read-only, from the database sequence | The editable version is what burned six invoice numbers |
+| Venmo QR fetched from api.qrserver.com | Drawn on the server | No third party learns the shop's handle, and it still works when the wifi doesn't |
+| Customer list paged 25 at a time | Whole book, filtered as you type | 226 names is nothing to send and everything to gain |
+
+Two things worth knowing about the design:
+
+- **Dates are the shop's**, not the server's. Vercel runs in UTC and Neon's HTTP
+  driver gives every query its own UTC session, so every date comparison
+  converts to `America/Los_Angeles` explicitly. On 31 March that is the
+  difference between 17 invoices and 5.
+- **The kiosk never sends prices.** It is unauthenticated by design — a shared
+  terminal with no login — so the browser sends item numbers and quantities and
+  the server looks up every amount of money itself.
+
+---
+
+## P1 — Sales tax sits outside the total on 1,046 imported invoices
+
+Found by a live end-to-end test on 11 August 2026.
+
+The previous bookkeeping software recorded an invoice's total **before** sales
+tax, with the tax in a column of its own. Everything this app has ever written
+records the total **including** tax. Both conventions are now sitting in the
+same table:
+
+| Where the record came from | Invoices | Total excludes tax | Tax outside totals |
+|---|---|---|---|
+| Imported (id below 10000) | 1,251 | 1,046 | **$1,885.78** |
+| Written by the app (id 10000+) | 123 | 0 | — |
+
+Reports compute revenue as `total − tax`. On the 1,046 that already exclude it,
+that subtracts the tax a second time, so **revenue is understated by up to
+$1,885.78 across all time** — about $593 of it in 2025 alone. Taxable sales on
+the Sales tax screen are off by the same reasoning.
+
+**Nothing has been changed.** Which figure is right depends on a fact only Mom
+has: on a $6.45 order in January 2025, did the customer hand over $6.45 or
+$6.95? The Money screen now says so in as many words, and reprinted invoices
+show only the rows that add up to what the invoice says it was settled for,
+with the tax as a footnote.
+
+- [ ] **Mom:** for a pre-2026 order, did the amount you were paid include the
+      sales tax or not?
+- [ ] **Michael:** once she answers, a one-off migration can put the 1,046
+      records on the same footing as everything else, and this note can go.
+
+---
+
+## P1 — Four bulk discounts were applied but never recorded
+
+Same test, same day. Invoices **10047, 10048, 10057 and 10105** were settled for
+less than their line items come to — $50.49, $8.78, $0.92 and $3.40 less. The
+old checkout let you enter a bulk discount percentage, applied it to the money,
+and then called `commit_sale`, which had no discount parameter: the invoice
+recorded `discount = 0`.
+
+Harmless to the bank, but the line items on those four documents don't explain
+their totals. The new point of sale stores the discount, so this cannot recur.
+Reprinted invoices show the difference as an "Adjustment" rather than printing
+figures that don't add up.
+
+(Invoice 10146 is out by 3¢ — a rounding artefact, not worth chasing.)
+
+---
+
 ## P1 — Six sales were lost and are not recoverable from the app
 
 `commit_sale` used to claim the invoice number from Settings *before* writing the
@@ -114,35 +193,43 @@ side of it:
 
 ---
 
+## P2 — Switching over
+
+- [ ] **Michael:** deploy `web/` and set `DATABASE_URL`, `KIOSK_ADMIN_PIN` and
+      `KIOSK_SESSION_SECRET` in the Vercel dashboard. Confirm the PIN opens the
+      back office and the kiosk lists items.
+- [ ] **Michael:** add `SMTP_USER` and `SMTP_PASS` (a Gmail *app password*) if
+      Mom wants emailed receipts. Until then every Email button says so plainly
+      instead of failing in front of a customer. Settings has a "Test the
+      connection" button.
+- [ ] **Mom:** try the new kiosk on the iPad and the back office on the laptop
+      *before* the Streamlit app is switched off. Both read and write the same
+      database, so they can run side by side for as long as it takes.
+- [ ] **Michael:** once she's happy, take the Streamlit app down. `Home.py`,
+      `pages/`, `backend.py`, `backend_sheets_legacy.py`, `documents.py`, `ui.py`,
+      `assets/`, `.streamlit/` and `requirements.txt` all go with it. Keep `db/`
+      — that is the schema and the migration record.
+
+---
+
 ## P3 — Engineering, in rough value order
 
-- [ ] **Migrate off Google Sheets to Neon Postgres.** Every serious problem found
-      in this project was a missing primary key: two CustomerIDs shared by two
-      customers, 27 duplicated transaction rows overstating revenue by $18,822.52,
-      five SKUs shared by multiple products. A `PRIMARY KEY` rejects all of them at
-      write time. Keep the Streamlit UI; replace `backend.py`'s storage layer and
-      mirror nightly to a read-only Sheet so Mom keeps the view she trusts.
-      Neon's free tier auto-resumes in ~500ms (Supabase's free tier pauses after a
-      week and needs a manual wake).
-- [ ] **`st.dialog` for the customer profile.** Would delete the
-      `active_cust_id` / `active_cust_row` session-state juggling entirely — the
-      exact machinery that caused the original wrong-customer bug.
-- [ ] **Inventory search selectbox ships all 1,243 items to the browser** on every
-      rerun, on both the admin checkout and the kiosk. Fine today, worth watching.
-- [ ] **`delete_invoice` loops `find`/`delete_rows` per line item** — one API round
-      trip each. A 26-line invoice is 26 sequential calls.
-- [ ] **No write is transactional.** `commit_sale` writes the transaction, then the
-      items, then the stock. A failure between steps leaves a partial sale. The ID
-      rollback covers the worst case; the rest goes away with Postgres.
 - [ ] **Invoice 175** (2023-05-13, $24.00) points at customer `C-104`, who no longer
-      exists. Shows as "Unknown" in reports. Harmless, pre-existing.
-- [ ] **Streamlit Cloud sleeps on inactivity** — the 9-minute health ping in
-      `Kiosk.py` helps but does not fully solve it, since sleep is based on
-      WebSocket inactivity. If the iPad kiosk needs instant-on all day, that is
-      worth ~$5/mo on Fly.io or Render.
-- [ ] **`fpdf` is pinned at 1.7.2**, the last release under that name, from 2012.
-      The invoice layout is written against its API. Migrating to `fpdf2` is its
-      own task with the PDFs compared side by side — not a dependency bump.
+      exists. Shows as "Guest" in reports. Harmless, pre-existing.
+- [ ] **No automated tests.** What exists is a script that runs the real queries
+      and write paths against the live database inside transactions that
+      deliberately abort, so nothing persists (25 checks, all passing). It is not
+      committed and does not run in CI. A Neon branch would give a disposable
+      copy to test against properly.
+- [ ] **`stock_moves` is append-only but nothing reads it in bulk.** Per-item
+      history exists in the inventory dialog. A "why did this month's stock
+      move" view would make the 21 negative-stock items explicable rather than
+      just visible.
+- [ ] **The kiosk ships the whole catalogue** (~1,500 items) so search survives a
+      wifi drop. Worth watching if the catalogue triples.
+- [ ] **No offline write queue.** Search works offline; finishing a sale does
+      not. The basket survives, the error is explicit and nothing is lost — but a
+      genuinely offline checkout would need a service worker and a sync queue.
 
 ---
 
