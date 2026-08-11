@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { checkPin } from "./actions";
+import Modal from "./modal";
 
 const MAX = 12;
 
@@ -66,18 +67,11 @@ export default function PinDialog({ onClose }: { onClose: () => void }) {
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 p-6 backdrop-blur-[2px]"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Staff access"
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="pop w-full max-w-[340px] rounded-3xl border border-line bg-surface p-6 shadow-[0_24px_60px_-20px_rgba(34,32,29,0.35)]"
-      >
-        <h2 className="font-display text-center text-[23px] font-semibold">Staff access</h2>
+    <Modal onClose={onClose} labelledBy="pin-title">
+      <div className="pop w-full max-w-[340px] rounded-3xl border border-line bg-surface p-6 shadow-[0_24px_60px_-20px_rgba(34,32,29,0.35)]">
+        <h2 id="pin-title" className="font-display text-center text-[23px] font-semibold">
+          Staff access
+        </h2>
         <p className="mt-1 text-center text-[14px] text-ink-faint">
           Enter your PIN to open the admin area.
         </p>
@@ -162,6 +156,6 @@ export default function PinDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
