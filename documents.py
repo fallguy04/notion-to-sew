@@ -99,11 +99,15 @@ def send_receipt_email(to_email: str, invoice_id: str, pdf_bytes: bytes):
             "please go to the dashboard and click 'Reboot App' to force a refresh."
         )
     
-    # Try to get company name from settings
+    # Try to get company name from settings.
+    # Imported lazily: backend imports this module, so a module-level import
+    # here would be circular. The previous bare call to get_settings_dict()
+    # raised NameError on every send and was swallowed by the except, silently
+    # falling back to the default company name.
     try:
-        settings = get_settings_dict()
-        company_name = settings.get("CompanyName", "Notion to Sew")
-    except:
+        import backend
+        company_name = backend.get_settings_dict().get("CompanyName", "Notion to Sew")
+    except Exception:
         company_name = "Notion to Sew"
 
     msg = MIMEMultipart()
