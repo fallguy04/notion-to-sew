@@ -515,6 +515,16 @@ export async function getInvoiceNumbering() {
   return { ...r, gap: Math.max(0, r.sequence_at - r.highest) };
 }
 
+/**
+ * Whether a sale must be attached to somebody.
+ *
+ * Defaults to yes. Six invoices in the book are filed against nobody because
+ * someone forgot their name at the counter, and an unattributed sale can't be
+ * chased, credited, or counted towards a customer's history.
+ */
+export const requiresCustomer = (settings: Record<string, string>) =>
+  (settings.RequireCustomer ?? "true") !== "false";
+
 export const DEFAULT_EXPENSE_CATEGORIES =
   "Inventory Purchase, Fabric, Notions, Rent, Marketing, Shipping, Wages, Other";
 

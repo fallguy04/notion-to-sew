@@ -120,3 +120,46 @@ export async function emailInvoiceAction(
     return fail(explain(e));
   }
 }
+
+/**
+ * Puts a name on an invoice that was rung up as a guest — or corrects one filed
+ * against the wrong person.
+ *
+ * Only the attribution moves. The money has already changed hands, so prices,
+ * tax and totals stay exactly as they were recorded; re-pricing a settled sale
+ * against a wholesale account would quietly rewrite history.
+ */
+export async function assignCustomerAction(
+  invoiceId: number,
+  customerId: string | null,
+): Promise<ActionResult> {
+  try {
+    await requireStaff();
+    const invoice = await getInvoice(invoiceId);
+    if (!invoice) return fail("That invoice no longer exists.");
+
+    const previous = invoice.customer_id;
+    const { sql } = await import("@/lib/db");
+
+    if (customerId) {
+      const rows = (await sql`SELECT name FROM customers WHERE id = ${customerId}`) as {
+        name: string;
+      }[];
+      if (rows.length === 0) return fail("That customer no longer exists.");
+      await sql`UPDATE invoices SET customer_id = ${customerId} WHERE id = ${invoiceId}`;
+      revalidatePath(`/admin/customers/${customerId}`);
+      if (previous) revalidatePath(`/admin/customers/${previous}`);
+      touch(customerId);
+      revalidatePath(`/admin/invoices/${invoiceId}`);
+      return ok(`Invoice #${invoiceId} is now filed under ${rows[0].name}.`);
+    }
+
+    await sql`UPDATE invoices SET customer_id = NULL WHERE id = ${invoiceId}`;
+    if (previous) revalidatePath(`/admin/customers/${previous}`);
+    touch(previous);
+    revalidatePath(`/admin/invoices/${invoiceId}`);
+    return ok(`Invoice #${invoiceId} is no longer attached to anyone.`);
+  } catch (e) {
+    return fail(explain(e));
+  }
+}

@@ -1,11 +1,18 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getInvoice, getInvoiceLines, getSettings, getCustomer } from "@/lib/queries";
+import {
+  getInvoice,
+  getInvoiceLines,
+  getSettings,
+  getCustomer,
+  getCustomers,
+} from "@/lib/queries";
 import { mailConfigured } from "@/lib/mail";
 import { money, unitPrice, shortDate, dateTime, invoiceMaths } from "@/lib/format";
 import { Card, StatusPill, Note } from "@/components/ui";
 import InvoiceActions from "@/components/invoice-actions";
 import FreightBox from "./freight-box";
+import AssignCustomer from "./assign-customer";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +32,10 @@ export default async function InvoicePage({
   ]);
   if (!invoice) notFound();
 
-  const customer = invoice.customer_id ? await getCustomer(invoice.customer_id) : null;
+  const [customer, customers] = await Promise.all([
+    invoice.customer_id ? getCustomer(invoice.customer_id) : Promise.resolve(null),
+    getCustomers(),
+  ]);
   const company = settings.CompanyName || "Notion to Sew";
 
   // Shipping lives in the line items, so the stored subtotal contains it; and
@@ -86,8 +96,15 @@ export default async function InvoicePage({
                   {customer.name}
                 </Link>
               ) : (
-                (invoice.customer_name ?? "Guest")
+                <span className="text-ink-faint">No name on this sale</span>
               )}
+            </div>
+            <div className="no-print mt-2">
+              <AssignCustomer
+                invoiceId={invoice.id}
+                customers={customers}
+                current={customer ? { id: customer.id, name: customer.name } : null}
+              />
             </div>
             {customer?.address?.split("\n").map((l) => (
               <div key={l} className="text-[13.5px] text-ink-soft">

@@ -8,6 +8,7 @@ import {
   getEmailCounts,
   getReplies,
   expenseCategories,
+  requiresCustomer,
   type EmailLogRow,
 } from "@/lib/queries";
 import { mailSender } from "@/lib/mail";
@@ -48,6 +49,7 @@ export default async function SettingsPage() {
         settings={settings}
         ratePct={(rate * 100).toFixed(3).replace(/\.?0+$/, "")}
         categories={expenseCategories(settings).join(", ")}
+        requireCustomer={requiresCustomer(settings)}
       />
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">

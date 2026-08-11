@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { explain } from "@/lib/action-result";
 import { recordSale } from "@/lib/mutations";
-import { getCustomer, getTaxRate, getSettings } from "@/lib/queries";
+import { getCustomer, getTaxRate, getSettings, requiresCustomer } from "@/lib/queries";
 import { sql, type PaymentMethod } from "@/lib/db";
 import { receiptToken } from "@/lib/receipt-token";
 import { money } from "@/lib/format";
@@ -24,6 +24,8 @@ export type SaleRequest = {
   termsDays: number;
   /** Client's arithmetic, checked against the server's before anything is written. */
   expectedTotal: number;
+  /** yyyy-mm-dd, for re-entering a sale that happened on another day. */
+  soldOn?: string | null;
 };
 
 export type SaleResponse = {
@@ -63,6 +65,16 @@ export async function recordSaleAction(req: SaleRequest): Promise<SaleResponse> 
     // by nobody, which is how an unpaid balance becomes unrecoverable.
     if (req.payment === "invoice" && !customer) {
       return { ok: false, message: "Choose a customer before invoicing — a guest can't be billed later." };
+    }
+
+    // Checked here as well as hidden in the UI: the screen can be stale, and
+    // this action is its own endpoint.
+    const settings = await getSettings();
+    if (!customer && requiresCustomer(settings)) {
+      return {
+        ok: false,
+        message: "Every sale needs a customer. Pick one, or allow walk-ins under Settings.",
+      };
     }
 
     const isWholesale = customer?.is_wholesale ?? false;
@@ -109,6 +121,22 @@ export async function recordSaleAction(req: SaleRequest): Promise<SaleResponse> 
       isWholesale,
       termsDays: clamp(Math.round(req.termsDays ?? 0), 0, 365),
     });
+
+    // Re-entering a sale from another day: put it on that day, at midday shop
+    // time so it can't drift either side of midnight. A paid invoice carries
+    // its payment date with it.
+    if (req.soldOn && /^\d{4}-\d{2}-\d{2}$/.test(req.soldOn)) {
+      const { sql } = await import("@/lib/db");
+      await sql`
+        UPDATE invoices
+           SET sold_at = ((${req.soldOn}::date)::timestamp + interval '12 hours')
+                           AT TIME ZONE 'America/Los_Angeles',
+               paid_at = CASE WHEN status = 'paid'
+                              THEN ((${req.soldOn}::date)::timestamp + interval '12 hours')
+                                     AT TIME ZONE 'America/Los_Angeles'
+                              ELSE paid_at END
+         WHERE id = ${invoiceId}`;
+    }
 
     revalidatePath("/admin");
     revalidatePath("/admin/inventory");

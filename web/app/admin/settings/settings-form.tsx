@@ -9,10 +9,12 @@ export default function SettingsForm({
   settings,
   ratePct,
   categories,
+  requireCustomer,
 }: {
   settings: Record<string, string>;
   ratePct: string;
   categories: string;
+  requireCustomer: boolean;
 }) {
   const [result, action] = useActionState(saveSettingsAction, null);
 
@@ -77,6 +79,27 @@ export default function SettingsForm({
                 </span>
               </div>
             </Field>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHead title="At the till" />
+          <div className="px-5 py-5">
+            <label className="flex items-start gap-2.5 text-[14px]">
+              <input
+                type="checkbox"
+                name="require_customer"
+                defaultChecked={requireCustomer}
+                className="check mt-0.5"
+              />
+              <span>
+                Every sale needs a customer
+                <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-faint">
+                  Turns off the walk-in option, so nothing can be rung up without a name. A sale
+                  filed against nobody can&apos;t be chased or credited later.
+                </span>
+              </span>
+            </label>
           </div>
         </Card>
 

@@ -1,4 +1,10 @@
-import { getAllProducts, getCustomers, getTaxRate, getSettings } from "@/lib/queries";
+import {
+  getAllProducts,
+  getCustomers,
+  getTaxRate,
+  getSettings,
+  requiresCustomer,
+} from "@/lib/queries";
 import { venmoQr } from "@/lib/qr";
 import { PageHead } from "@/components/ui";
 import PosClient from "./pos-client";
@@ -34,6 +40,7 @@ export default async function PosPage({
         shopRate={shopRate}
         venmoUser={settings.VenmoUser ?? ""}
         venmoQr={qr}
+        requireCustomer={requiresCustomer(settings)}
         preselect={preselect}
       />
     </>

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import type { CustomerLite, ProductFull, PaymentMethod } from "@/lib/db";
-import { money, pct } from "@/lib/format";
+import { money, pct, today } from "@/lib/format";
 import { Card, CardHead, Field } from "@/components/ui";
 import { Spinner } from "@/components/form";
 import Modal from "@/components/modal";
@@ -36,6 +36,7 @@ export default function PosClient({
   shopRate,
   venmoUser,
   venmoQr,
+  requireCustomer,
   preselect,
 }: {
   products: ProductFull[];
@@ -43,6 +44,7 @@ export default function PosClient({
   shopRate: number;
   venmoUser: string;
   venmoQr: string | null;
+  requireCustomer: boolean;
   preselect: CustomerLite | null;
 }) {
   const [customer, setCustomer] = useState<CustomerLite | null>(preselect);
@@ -55,6 +57,10 @@ export default function PosClient({
   const [payment, setPayment] = useState<PaymentMethod>("check");
   const [termsDays, setTermsDays] = useState(30);
   const [addingFor, setAddingFor] = useState<string | null>(null);
+  // Blank means today. Only shown when asked for — re-entering a sale from
+  // another day is rare, and a date box on every sale invites a wrong one.
+  const [soldOn, setSoldOn] = useState("");
+  const [backdating, setBackdating] = useState(false);
   const [done, setDone] = useState<SaleResponse | null>(null);
   const [pending, start] = useTransition();
   const toast = useToast();
@@ -102,6 +108,8 @@ export default function PosClient({
     setApplyTax(true);
     setUseCredit(true);
     setPayment("check");
+    setSoldOn("");
+    setBackdating(false);
     setDone(null);
   }
 
@@ -122,6 +130,7 @@ export default function PosClient({
         useCredit,
         termsDays: payment === "invoice" ? termsDays : 0,
         expectedTotal: totals.total,
+        soldOn: backdating && soldOn ? soldOn : null,
       });
       if (res.ok) setDone(res);
       else toast(res.message, "bad");
@@ -149,20 +158,23 @@ export default function PosClient({
               onNew={(typed) => setAddingFor(typed)}
             />
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => setGuest(true)} className="btn btn-ghost">
-                Walk-in — no account
-              </button>
+              {!requireCustomer && (
+                <button type="button" onClick={() => setGuest(true)} className="btn btn-ghost">
+                  Walk-in — no account
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setAddingFor("")}
-                className="btn btn-quiet btn-sm"
+                className={requireCustomer ? "btn btn-ghost" : "btn btn-quiet btn-sm"}
               >
                 Add a new customer
               </button>
             </div>
             <p className="mt-4 text-[13px] leading-relaxed text-ink-faint">
-              A walk-in can pay by cash, check, card or Venmo. Billing later needs an account, so
-              there&apos;s someone to send the invoice to.
+              {requireCustomer
+                ? "Every sale needs a name. If they're new, add them here — it takes a moment and means the sale shows up in their history."
+                : "A walk-in can pay by cash, check, card or Venmo. Billing later needs an account, so there's someone to send the invoice to."}
             </p>
           </div>
         </Card>
@@ -416,11 +428,48 @@ export default function PosClient({
                   </div>
                 )}
 
+                <div className="mt-4 border-t border-line-soft pt-3">
+                  {backdating ? (
+                    <div className="rise">
+                      <Field label="Sale date" hint="For a sale that happened on another day.">
+                        <input
+                          type="date"
+                          value={soldOn}
+                          max={today()}
+                          onChange={(e) => setSoldOn(e.target.value)}
+                          className="field"
+                        />
+                      </Field>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBackdating(false);
+                          setSoldOn("");
+                        }}
+                        className="btn btn-quiet btn-sm mt-2"
+                      >
+                        Use today instead
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBackdating(true);
+                        setSoldOn(today());
+                      }}
+                      className="btn btn-quiet btn-sm w-full text-ink-faint"
+                    >
+                      This sale happened on another day
+                    </button>
+                  )}
+                </div>
+
                 <button
                   type="button"
                   disabled={pending || cart.length === 0}
                   onClick={submit}
-                  className="btn btn-primary btn-lg mt-5 w-full"
+                  className="btn btn-primary btn-lg mt-4 w-full"
                 >
                   {pending && <Spinner />}
                   {pending

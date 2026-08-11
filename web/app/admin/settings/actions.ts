@@ -37,6 +37,7 @@ export async function saveSettingsAction(
       TaxRate: String(ratePct / 100),
       VenmoUser: String(form.get("venmo_user") ?? "").trim().replace(/^@/, ""),
       ExpenseCategories: categories.join(", "),
+      RequireCustomer: form.get("require_customer") === "on" ? "true" : "false",
     });
 
     revalidatePath("/admin/settings");
