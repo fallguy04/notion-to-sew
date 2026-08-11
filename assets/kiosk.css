@@ -1,0 +1,47 @@
+/* Touch overrides, loaded only by the kiosk page (a real iPad on a counter).
+   Sizes here are floors, not suggestions: Apple's minimum is 44pt and a
+   standing customer is further from the screen than a seated one. */
+
+/* ====================== KIOSK — iPad, touch, standing use ================== */
+
+.kiosk-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1rem; padding: .2rem .1rem 1rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.4rem;
+}
+.kiosk-word {
+  font-family: 'Fraunces', ui-serif, Georgia, serif;
+  font-size: 1.6rem; font-weight: 600; letter-spacing: -.02em; color: var(--ink);
+}
+.kiosk-word em {
+  font-style: normal; color: var(--spruce);
+}
+.kiosk-tag {
+  font-size: .76rem; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--ink-faint); font-weight: 500;
+}
+
+/* The search field is the whole interaction on this screen, so it gets the
+   weight — but as scale and a hairline, not as a block of colour. */
+.stApp [data-baseweb="select"] > div { min-height: 64px; }
+[data-baseweb="select"] > div {
+  min-height: 76px !important;
+  border-radius: var(--r-lg) !important;
+  font-size: 1.15rem !important;
+}
+[data-baseweb="select"] input { font-size: 1.15rem !important; }
+
+/* Everything tappable clears 44px, most clear 56px. */
+.stButton > button { min-height: 58px; font-size: 1rem !important; }
+.stButton > button[kind="primary"] { min-height: 64px; font-size: 1.05rem !important; }
+
+.qty-readout {
+  font-family: 'Fraunces', ui-serif, Georgia, serif;
+  font-size: 1.5rem; font-weight: 600; text-align: center; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

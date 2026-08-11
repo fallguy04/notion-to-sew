@@ -14,3 +14,4 @@ streamlit-extras==0.7.8
 # here rather than being swapped for fpdf2 as a side effect of a dependency
 # bump. Migrating to fpdf2 is its own task, with the PDFs checked side by side.
 fpdf==1.7.2
+psycopg[binary,pool]==3.2.13

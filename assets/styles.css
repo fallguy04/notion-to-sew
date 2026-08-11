@@ -1,0 +1,334 @@
+/* ============================================================================
+   Notion to Sew — house style
+   ----------------------------------------------------------------------------
+   One stylesheet for both the admin portal and the kiosk. Streamlit's own
+   components are styled through their data-testid hooks rather than by
+   wrapping everything in custom HTML, so the app keeps working if a selector
+   stops matching after an upgrade — it degrades to stock Streamlit, not to a
+   broken page.
+
+   Principles:
+     - hairlines, not boxes. One border weight (1px) everywhere.
+     - colour is punctuation, not wallpaper. No large saturated fills.
+     - 44px minimum on anything tappable; the kiosk is a real iPad.
+     - motion is short (120–220ms) and always interruptible.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink:        #22201D;
+  --ink-soft:   #57514A;
+  --ink-faint:  #8A8178;
+  --paper:      #FBF9F5;
+  --surface:    #FFFFFF;
+  --line:       #E7DFD3;
+  --line-soft:  #F0E9DE;
+
+  --spruce:     #1F6E5A;
+  --spruce-dk:  #17553F;
+  --spruce-lt:  #EAF2EE;
+
+  --clay:       #A6552F;
+  --amber:      #B4761E;
+  --rose:       #A63A32;
+
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 13px;
+
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --dur:  150ms;
+
+  --shadow-1: 0 1px 2px rgba(34,32,29,.05);
+  --shadow-2: 0 2px 4px rgba(34,32,29,.06), 0 6px 16px -8px rgba(34,32,29,.10);
+  --shadow-3: 0 8px 32px -12px rgba(34,32,29,.22);
+}
+
+/* ---------------------------------------------------------------- typography */
+
+html, body, .stApp, button, input, textarea, select {
+  font-family: 'Inter', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv05' 1, 'cv08' 1, 'ss01' 1, 'tnum' 0;
+}
+
+h1, h2, h3, h4,
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+  font-family: 'Fraunces', ui-serif, Georgia, serif !important;
+  font-optical-sizing: auto;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  font-weight: 600;
+}
+h1, .stMarkdown h1 { font-size: 2.0rem;  line-height: 1.15; letter-spacing: -0.02em; }
+h2, .stMarkdown h2 { font-size: 1.45rem; line-height: 1.2; }
+h3, .stMarkdown h3 { font-size: 1.12rem; line-height: 1.3; font-weight: 600; }
+
+/* Icon fonts are ligature fonts: override their family and the glyph name
+   renders as literal text ("keyboard_double_arrow_right"). Restore them
+   explicitly after any blanket font rule. */
+[data-testid="stIconMaterial"], .material-icons, .material-icons-outlined,
+.material-symbols-rounded, .material-symbols-outlined, span[class*="material-"] {
+  font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
+               'Material Icons' !important;
+  font-feature-settings: 'liga' !important;
+  letter-spacing: normal !important;
+}
+
+/* Money and quantities line up in columns when the digits are tabular. */
+.stMetric [data-testid="stMetricValue"],
+.money, td, .stDataFrame { font-variant-numeric: tabular-nums; }
+
+[data-testid="stMetricValue"] {
+  font-family: 'Fraunces', ui-serif, Georgia, serif !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em;
+}
+[data-testid="stMetricLabel"] {
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: .68rem !important;
+  font-weight: 600;
+  color: var(--ink-faint) !important;
+}
+
+/* ------------------------------------------------------------------- surface */
+
+.stApp { background: var(--paper); }
+
+.block-container { padding-top: 2.4rem !important; max-width: 1180px; }
+
+/* Content settles in rather than snapping. Scoped deliberately to headers and
+   cards: animating a broad wrapper gives it a transform, and a transformed
+   ancestor turns any `position: fixed` descendant into `absolute` — which sent
+   the floating Sheets shortcut wandering into the middle of the page. */
+@media (prefers-reduced-motion: no-preference) {
+  .page-head, .kiosk-head,
+  [data-testid="stVerticalBlockBorderWrapper"] {
+    animation: rise 220ms var(--ease) both;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
+/* -------------------------------------------------------------------- inputs */
+
+/* One border, on one element. The previous rule put a 2px border on the outer
+   wrapper while BaseWeb kept its own on the inner div, which is why edges
+   looked uneven — two borders of different weights stacked at the corners. */
+[data-baseweb="input"], [data-baseweb="select"] > div,
+[data-baseweb="textarea"], [data-baseweb="base-input"] {
+  background: var(--surface) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--r-md) !important;
+  box-shadow: none !important;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+[data-baseweb="select"] > div > div,
+[data-baseweb="input"] > div { border: none !important; box-shadow: none !important; }
+
+[data-baseweb="input"]:hover, [data-baseweb="select"] > div:hover {
+  border-color: #D6CBBA !important;
+}
+
+/* Focus is a ring, not a thicker border — a border change reflows by a pixel
+   and makes the box visibly jump. */
+[data-baseweb="input"]:focus-within, [data-baseweb="select"] > div:focus-within,
+[data-baseweb="textarea"]:focus-within {
+  border-color: var(--spruce) !important;
+  box-shadow: 0 0 0 3px rgba(31,110,90,.13) !important;
+}
+
+.stTextInput input, .stNumberInput input, .stTextArea textarea, .stDateInput input {
+  color: var(--ink) !important;
+  font-size: .94rem !important;
+}
+.stTextInput input::placeholder, .stNumberInput input::placeholder {
+  color: var(--ink-faint) !important;
+}
+
+/* Widget labels: small, quiet, consistent. */
+.stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label,
+.stTextArea label, .stRadio label, .stCheckbox label, .stMultiSelect label {
+  font-size: .8rem !important;
+  font-weight: 500 !important;
+  color: var(--ink-soft) !important;
+  letter-spacing: .005em;
+}
+
+/* ------------------------------------------------------------------- buttons */
+
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+  border-radius: var(--r-sm) !important;
+  border: 1px solid var(--line) !important;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  font-weight: 500 !important;
+  font-size: .9rem !important;
+  min-height: 44px;                 /* touch target floor */
+  padding: 0 1rem !important;
+  box-shadow: var(--shadow-1) !important;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease), transform 80ms var(--ease) !important;
+}
+.stButton > button:hover, .stDownloadButton > button:hover,
+.stFormSubmitButton > button:hover {
+  background: #FDFCFA !important;
+  border-color: #D6CBBA !important;
+  box-shadow: var(--shadow-2) !important;
+}
+.stButton > button:active, .stFormSubmitButton > button:active { transform: translateY(1px); }
+.stButton > button:focus-visible, .stFormSubmitButton > button:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(31,110,90,.20) !important;
+}
+
+.stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"],
+.stDownloadButton > button[kind="primary"] {
+  background: var(--spruce) !important;
+  border-color: var(--spruce) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 2px rgba(23,85,63,.24) !important;
+}
+.stButton > button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primary"]:hover {
+  background: var(--spruce-dk) !important;
+  border-color: var(--spruce-dk) !important;
+  box-shadow: 0 2px 10px -2px rgba(23,85,63,.34) !important;
+}
+
+/* --------------------------------------------------------------------- cards */
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+  background: var(--surface);
+  border: 1px solid var(--line) !important;
+  border-radius: var(--r-lg) !important;
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover { border-color: #DED4C5 !important; }
+
+/* -------------------------------------------------------------------- alerts */
+
+/* Stock Streamlit alerts are large tinted slabs. Reduced to a tinted card with
+   a single accent edge — colour as punctuation, not as a background wash. */
+[data-testid="stAlert"] {
+  border-radius: var(--r-md) !important;
+  border: 1px solid var(--line) !important;
+  border-left-width: 3px !important;
+  box-shadow: none !important;
+  padding: .7rem .9rem !important;
+  font-size: .9rem;
+}
+[data-testid="stAlert"] p { font-size: .9rem; }
+
+/* ---------------------------------------------------------------- navigation */
+
+section[data-testid="stSidebar"] {
+  background: #F4EFE7;
+  border-right: 1px solid var(--line);
+}
+section[data-testid="stSidebar"] .stRadio > div { gap: 1px; }
+section[data-testid="stSidebar"] .stRadio label {
+  padding: .5rem .7rem;
+  border-radius: var(--r-sm);
+  transition: background var(--dur) var(--ease);
+  font-size: .92rem !important;
+  color: var(--ink) !important;
+}
+section[data-testid="stSidebar"] .stRadio label:hover { background: rgba(31,110,90,.06); }
+
+/* Emoji sit tight against their label at most sizes; nudge them apart. */
+section[data-testid="stSidebar"] .stRadio label p { letter-spacing: .01em; }
+
+/* ---------------------------------------------------------------------- tabs */
+
+.stTabs [data-baseweb="tab-list"] { gap: .25rem; border-bottom: 1px solid var(--line); }
+.stTabs [data-baseweb="tab"] {
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  padding: .5rem .85rem;
+  font-size: .9rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.stTabs [data-baseweb="tab"]:hover { background: rgba(31,110,90,.05); color: var(--ink); }
+.stTabs [aria-selected="true"] { color: var(--spruce) !important; font-weight: 600; }
+.stTabs [data-baseweb="tab-highlight"] { background: var(--spruce) !important; height: 2px; }
+
+/* --------------------------------------------------------------------- table */
+
+.stDataFrame { border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); }
+
+/* ------------------------------------------------------------------ dividers */
+
+hr, [data-testid="stDivider"] { border-color: var(--line-soft) !important; }
+
+/* ------------------------------------------------------------------- spinner */
+
+.stSpinner > div { border-top-color: var(--spruce) !important; }
+
+/* --------------------------------------------------------------- page header */
+
+.page-head { margin: 0 0 1.6rem; }
+.page-head-row { display: flex; align-items: baseline; gap: .6rem; }
+.page-head-icon { font-size: 1.05rem; line-height: 1; opacity: .85; }
+.page-head-title {
+  font-family: 'Fraunces', ui-serif, Georgia, serif;
+  font-size: 1.9rem !important;
+  font-weight: 600;
+  letter-spacing: -.022em;
+  color: var(--ink);
+  margin: 0 !important;
+  padding: 0 !important;
+}
+/* A short accent under the title rather than a full-bleed rule across the page. */
+.page-head-title::after {
+  content: ""; display: block;
+  width: 34px; height: 2px; margin-top: .5rem;
+  background: var(--spruce); border-radius: 2px;
+}
+.page-head-sub {
+  margin: .55rem 0 0 !important;
+  font-size: .875rem; color: var(--ink-faint);
+}
+
+/* The Sheets shortcut was colliding with the page title. Park it bottom-right,
+   out of the reading path, and let it settle back to a hairline at rest. */
+#sheets-fab {
+  top: auto !important; bottom: 22px !important; right: 22px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 999px !important;
+  box-shadow: var(--shadow-1) !important;
+  opacity: .72;
+  transition: opacity var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+              transform var(--dur) var(--ease) !important;
+}
+#sheets-fab:hover {
+  opacity: 1; transform: translateY(-1px);
+  box-shadow: var(--shadow-2) !important;
+  background: var(--surface) !important;
+}
+#sheets-fab span { font-family: 'Inter', sans-serif !important; color: var(--ink-soft) !important; }
+
+/* ---------------------------------------------------------------- status pill */
+
+/* Sized to its text, so it survives a narrow column instead of wrapping to one
+   letter per line the way a full-width alert box does. */
+.pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.pill-paid { background: var(--spruce-lt); color: var(--spruce-dk); }
+.pill-due  { background: #FBF0DE;          color: #7E5312; }
+

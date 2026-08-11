@@ -2,20 +2,20 @@ import streamlit as st
 import pandas as pd
 import backend as db
 import base64
+import ui
 from datetime import datetime, date
 from streamlit_pdf_viewer import pdf_viewer
-from streamlit_extras.colored_header import colored_header
 
 # --- CONFIG ---
 st.set_page_config(page_title="Admin | Notion to Sew", layout="wide", page_icon="🧵", initial_sidebar_state="expanded")
+
+ui.inject()
 
 # --- GOOGLE SHEETS FAB (Admin mode only) ---
 st.markdown("""
 <style>
 #sheets-fab {
     position: fixed !important;
-    top: 60px !important;
-    right: 20px !important;
     z-index: 1000000 !important;
     display: flex !important;
     align-items: center !important;
@@ -65,9 +65,7 @@ def auto_refresh():
 
 # --- HELPER: Branded page header ---
 def page_header(icon: str, title: str, subtitle: str = ""):
-    # green-70 matches the spruce primary in config.toml; colored_header draws a
-    # fixed-palette rule that otherwise stays Streamlit blue and fights the theme.
-    colored_header(label=f"{icon} {title}", description=subtitle, color_name="green-70")
+    ui.page_header(icon, title, subtitle)
 
 # --- HELPER: Normalize transaction IDs (handles "1001.0" → "1001" from old imports) ---
 def _normalize_tid(tid) -> str:
@@ -1000,7 +998,7 @@ elif menu == "👥 Customers":
                     # Iterate with Index (i) to fix duplicate key error
                     for i, t_row in my_trans.iterrows():
                         with st.container(border=True):
-                            c_d, c_a, c_s, c_act = st.columns([1.5, 1, 1, 1.5])
+                            c_d, c_a, c_s, c_act = st.columns([1.6, 1, 0.9, 2.5], vertical_alignment="center")
 
                             c_d.write(f"**{str(t_row['Timestamp'])[:10]}**")
                             c_d.caption(f"#{t_row['TransactionID']}")
@@ -1011,8 +1009,12 @@ elif menu == "👥 Customers":
 
                             status_raw = str(t_row['Status']).strip()
                             is_paid = status_raw.lower() not in ['pending', 'unpaid', 'open']
-                            if is_paid: c_s.success("Paid", icon="✅")
-                            else: c_s.warning("Unpaid", icon="⏳")
+                            # A full-width alert box in a narrow column wraps to one
+                            # letter per line. A pill sizes to its text instead.
+                            c_s.markdown(
+                                '<span class="pill pill-paid">Paid</span>' if is_paid
+                                else '<span class="pill pill-due">Unpaid</span>',
+                                unsafe_allow_html=True)
 
                             # ACTION BUTTONS (Unique Keys Added)
                             b1, b2, b3, b4 = c_act.columns(4)

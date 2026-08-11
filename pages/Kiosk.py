@@ -2,10 +2,15 @@ import streamlit as st
 import backend as db
 import pandas as pd
 import base64
+import sys, pathlib
+sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent))
+import ui
 import streamlit.components.v1 as components
 
 # --- CONFIG (iPad Optimized - Refined) ---
 st.set_page_config(page_title="Kiosk | Notion to Sew", layout="wide", initial_sidebar_state="collapsed")
+
+ui.inject(kiosk=True)
 
 # --- KEEP APP AWAKE ---
 components.html(
@@ -17,79 +22,6 @@ components.html(
     height=0
 )
 
-# --- CUSTOM CSS FOR A MODERN KIOSK FEEL ---
-st.markdown("""
-<style>
-    /* Global Styles */
-    .main {
-        background-color: #FAF7F2;
-    }
-    
-    /* Hero Banner - Much Slimmer */
-    .hero-container {
-        background: linear-gradient(135deg, #1F6E5A 0%, #2F8A73 100%);
-        padding: 0.8rem 1rem;
-        border-radius: 0.8rem;
-        color: white;
-        text-align: center;
-        margin-bottom: 1rem;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-    }
-    .hero-title {
-        font-size: 1.4rem !important;
-        font-weight: 700 !important;
-        margin-bottom: 0rem !important;
-        letter-spacing: -0.5px;
-    }
-    .hero-subtitle {
-        font-size: 0.8rem !important;
-        opacity: 0.85;
-    }
-    
-    /* Dominant Search Box Styling */
-    div[data-baseweb="select"] {
-        border-radius: 1.2rem !important;
-        border: 2px solid #1F6E5A !important;
-        height: 80px !important;
-        display: flex !important;
-        align-items: center !important;
-        font-size: 1.5rem !important;
-    }
-    
-    div[data-baseweb="select"] > div {
-        height: 100% !important;
-        display: flex !important;
-        align-items: center !important;
-    }
-
-    div[data-baseweb="select"] input {
-        font-size: 1.5rem !important;
-    }
-
-    /* Cart Button Tuning */
-    .stButton > button[kind="primary"] {
-        height: 60px !important;
-        font-size: 1.2rem !important;
-        font-weight: 600 !important;
-    }
-    
-    /* Card Styling */
-    .stButton button {
-        border-radius: 0.6rem !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    
-    /* Quick Add Section */
-    .quick-add-header {
-        font-size: 1.3rem;
-        font-weight: 700;
-        margin-top: 1.5rem;
-        margin-bottom: 0.8rem;
-        color: #2A2724;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 # --- INIT ---
 if 'data' not in st.session_state or not st.session_state['data']:
     st.session_state['data'] = db.get_data()
@@ -98,6 +30,31 @@ if 'page' not in st.session_state: st.session_state['page'] = 'shop'
 if 'show_admin_login' not in st.session_state: st.session_state['show_admin_login'] = False
 
 # --- HELPERS ---
+def _top_sellers(inv_df, n=4):
+    """Actual best sellers by units over the last 12 months.
+
+    This used to be inv_df.head(4) — literally the first four rows of the
+    spreadsheet, unchanging and unrelated to what people buy.
+    """
+    try:
+        items = st.session_state['data']['items']
+        trans = st.session_state['data']['transactions']
+        if items.empty or trans.empty:
+            return inv_df.head(n)
+        cutoff = (pd.Timestamp.now() - pd.DateOffset(months=12)).strftime('%Y-%m-%d')
+        recent = trans[trans['Timestamp'].astype(str) >= cutoff]['TransactionID'].astype(str)
+        sold = items[items['TransactionID'].astype(str).isin(set(recent))]
+        ranked = (sold.assign(_q=pd.to_numeric(sold['QtySold'], errors='coerce').fillna(0))
+                      .groupby(sold['SKU'].astype(str).str.strip())['_q'].sum()
+                      .sort_values(ascending=False))
+        keyed = inv_df.assign(_k=inv_df['SKU'].astype(str).str.strip())
+        picks = keyed[keyed['_k'].isin(ranked.index[:n * 3])].copy()
+        picks['_rank'] = picks['_k'].map(ranked)
+        picks = picks.sort_values('_rank', ascending=False).head(n)
+        return picks if not picks.empty else inv_df.head(n)
+    except Exception:
+        return inv_df.head(n)
+
 def go_home(): st.session_state['page'] = 'shop'
 def go_checkout(): st.session_state['page'] = 'checkout'
 
@@ -118,14 +75,15 @@ def _get_pdf_print_button(pdf_bytes, label="🖨️ Print / Open in New Tab"):
 with st.sidebar:
     st.markdown("### 🔐 Staff Access")
     st.caption("Enter your PIN to open the Admin portal.")
-    pin_input = st.text_input("PIN", type="password", label_visibility="collapsed", placeholder="Enter PIN")
-    if st.button("Unlock Admin ➝", use_container_width=True):
-        correct_pin = str(st.secrets.get("admin", {}).get("pin", "1234"))
-        if pin_input == correct_pin:
-            st.session_state['admin_authenticated'] = True
-            st.switch_page("Home.py")
-        else:
-            st.error("Incorrect PIN")
+    with st.form("staff_pin_sidebar", clear_on_submit=True, border=False):
+        pin_input = st.text_input("PIN", type="password", label_visibility="collapsed",
+                                  placeholder="Enter PIN")
+        if st.form_submit_button("Unlock Admin →", use_container_width=True):
+            if pin_input == str(st.secrets.get("admin", {}).get("pin", "1234")):
+                st.session_state['admin_authenticated'] = True
+                st.switch_page("Home.py")
+            else:
+                st.error("Incorrect PIN")
 
 # --- ADMIN FAB ---
 st.markdown('<a id="admin-fab" href="?admin_open=1" style="position:fixed; top:16px; right:16px; width:42px; height:42px; border-radius:50%; background:rgba(255,255,255,0.5); border:1px solid rgba(218,220,224,0.6); display:flex; align-items:center; justify-content:center; font-size:16px; z-index:99999; box-shadow:0 1px 4px rgba(0,0,0,0.08); backdrop-filter:blur(6px); opacity:0.22; text-decoration:none;">🔐</a>', unsafe_allow_html=True)
@@ -137,12 +95,14 @@ if st.query_params.get("admin_open") == "1":
 @st.dialog("Admin Sign In")
 def admin_login_dialog():
     st.caption("Enter your PIN to open the Admin portal.")
-    pin = st.text_input("PIN", type="password", placeholder="Enter PIN", label_visibility="collapsed")
-    if st.button("Unlock →", type="primary", use_container_width=True):
-        if pin == str(st.secrets.get("admin", {}).get("pin", "1234")):
-            st.session_state['admin_authenticated'] = True
-            st.switch_page("Home.py")
-        else: st.error("Incorrect PIN")
+    with st.form("staff_pin_dialog", clear_on_submit=True, border=False):
+        pin = st.text_input("PIN", type="password", placeholder="Enter PIN",
+                            label_visibility="collapsed")
+        if st.form_submit_button("Unlock →", type="primary", use_container_width=True):
+            if pin == str(st.secrets.get("admin", {}).get("pin", "1234")):
+                st.session_state['admin_authenticated'] = True
+                st.switch_page("Home.py")
+            else: st.error("Incorrect PIN")
 
 if st.session_state['show_admin_login']:
     admin_login_dialog()
@@ -154,12 +114,7 @@ if st.session_state['page'] == 'shop':
     cart_count = sum(item['qty'] for item in st.session_state['kiosk_cart'])
 
     # --- HERO SECTION (SLIMMER & SOFTER) ---
-    st.markdown("""
-        <div class="hero-container">
-            <div class="hero-title">Notion to Sew</div>
-            <div class="hero-subtitle">Quality Supplies · Local Service</div>
-        </div>
-    """, unsafe_allow_html=True)
+    ui.wordmark("Quality Supplies · Local Service")
 
     # --- DOMINANT SEARCH BAR ---
     df = st.session_state['data']['inventory'].copy()
@@ -234,12 +189,12 @@ if st.session_state['page'] == 'shop':
     # --- QUICK ADD SECTION ---
     else:
         st.markdown('<div class="quick-add-header">Popular Items</div>', unsafe_allow_html=True)
-        popular_items = df.head(4) 
+        popular_items = _top_sellers(df, 4)
         p_cols = st.columns(4)
         for i, (idx, p_row) in enumerate(popular_items.iterrows()):
             with p_cols[i]:
                 with st.container(border=True):
-                    st.markdown(f"**{p_row['Name'][:22]}...**" if len(p_row['Name']) > 22 else f"**{p_row['Name']}**")
+                    st.markdown(f"**{p_row['Name']}**")
                     st.write(f"${p_row['Price']:.2f}")
                     if st.button("Add +", key=f"quick_add_{i}", use_container_width=True):
                         found = False
