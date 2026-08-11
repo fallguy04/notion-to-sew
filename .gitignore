@@ -12,3 +12,6 @@ venv/
 
 # OS
 .DS_Store
+
+# migration working file — contains full customer data, never commit
+db/migration_payload.json
