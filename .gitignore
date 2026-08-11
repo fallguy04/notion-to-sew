@@ -15,3 +15,6 @@ venv/
 
 # migration working file — contains full customer data, never commit
 db/migration_payload.json
+
+# local-only secrets (Neon, etc) — never committed
+.env.local

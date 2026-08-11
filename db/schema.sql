@@ -4,8 +4,6 @@
 -- something broke. The comments name the incident so nobody removes one later
 -- thinking it's decorative.
 
-BEGIN;
-
 CREATE TYPE invoice_status  AS ENUM ('paid', 'pending', 'void');
 CREATE TYPE payment_method  AS ENUM ('cash', 'check', 'card', 'venmo', 'invoice', 'credit');
 
@@ -154,7 +152,6 @@ CREATE TRIGGER customers_touch BEFORE UPDATE ON customers
 CREATE TRIGGER products_touch  BEFORE UPDATE ON products
     FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
-COMMIT;
 
 -- ---------------------------------------------------------------------------
 -- Selling, as one transaction. Either all of it happens or none of it does —

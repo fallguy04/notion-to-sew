@@ -155,7 +155,7 @@ def transform(raw):
             total=money(g(2)), tax=money(g(7)),
             is_wholesale=truthy(g(8)), due_date=g(6)[:10] or None,
             sold_at=sold, paid_at=(sold if status == "paid" else None),
-            credit_applied=Decimal("0.00"), note=None,
+            credit_applied=Decimal("0.00"), discount=Decimal("0.00"), note=None,
         ))
     out["invoices"] = [i for i in invoices if i["id"] is not None]
     dropped = [i["raw_id"] for i in invoices if i["id"] is None]
@@ -169,16 +169,26 @@ def transform(raw):
     # credit_applied where they belong and floor the total at zero, recording a
     # note on the invoice so the adjustment is auditable rather than silent.
     credit_lines = collections.defaultdict(Decimal)
+    discount_lines = collections.defaultdict(Decimal)
     for r in raw["TransactionItems"]:
         iid = r[0].strip()
         if not iid.isdigit():
             continue
         price = money(r[3] if len(r) > 3 else 0)
         desc = (r[4].strip() if len(r) > 4 else "").lower()
-        if price < 0 and "credit" in desc:
-            credit_lines[int(iid)] += abs(price * Decimal(r[2] or 1))
+        if price < 0:
+            amount = abs(price * Decimal(r[2] or 1))
+            if "credit" in desc:
+                credit_lines[int(iid)] += amount
+            else:
+                discount_lines[int(iid)] += amount   # "Discount", "40% Off Discount", ...
 
     by_id = {i["id"]: i for i in out["invoices"]}
+    for iid, amt in discount_lines.items():
+        if iid in by_id:
+            by_id[iid]["discount"] = amt
+    notes.append(f"moved {len(discount_lines)} negative discount lines into invoices.discount "
+                 f"(${sum(discount_lines.values())})")
     for iid, amt in credit_lines.items():
         inv = by_id.get(iid)
         if not inv:
@@ -201,8 +211,8 @@ def transform(raw):
         g = lambda i: r[i].strip() if len(r) > i else ""
         sku = g(1)
         qty = Decimal(g(2) or 0)
-        if money(g(3)) < 0 and "credit" in g(4).lower():
-            continue                      # moved into invoices.credit_applied above
+        if money(g(3)) < 0:
+            continue        # moved into invoices.credit_applied / .discount above
         if qty == 0:
             notes.append(f"line skipped, qty 0 on invoice {iid}")
             continue
@@ -256,7 +266,7 @@ def reconcile(raw, out):
 
     sheet_lines = [r for r in raw["TransactionItems"] if r[0].strip()]
     relocated = sum(1 for r in raw["TransactionItems"]
-                    if len(r) > 4 and money(r[3]) < 0 and "credit" in r[4].lower())
+                    if len(r) > 3 and money(r[3]) < 0)
     check("every line item migrated or relocated to credit_applied",
           len(out["invoice_lines"]) + relocated == len(sheet_lines),
           f"{len(out['invoice_lines'])} lines + {relocated} relocated of {len(sheet_lines)}")
@@ -284,6 +294,8 @@ def reconcile(raw, out):
           all(i["paid_at"] for i in out["invoices"] if i["status"] == "paid"))
     check("no negative money",
           all(i["total"] >= 0 and i["tax"] >= 0 for i in out["invoices"]))
+    check("no negative line prices (CHECK constraint)",
+          all(l["unit_price"] >= 0 for l in out["invoice_lines"]))
     check("no negative customer credit (CHECK constraint)",
           all(c["credit"] >= 0 for c in out["customers"]))
 
@@ -326,10 +338,9 @@ def main():
     print("\nAll checks passed. Safe to load with --load once DATABASE_URL is set.")
 
     if "--load" in sys.argv:
-        if not os.environ.get("DATABASE_URL"):
-            print("DATABASE_URL not set; nothing loaded.")
-            sys.exit(1)
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from load import load          # noqa: separate module, only imported when loading
+        print("\n=== LOAD ===")
         load(out)
 
 
