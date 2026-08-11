@@ -51,9 +51,28 @@ whether to zero them out or do a count.
 profit number the app shows is really just revenue until these are filled in.
 Does the bookkeeper still have the totals?
 
-**The Calico Point sale** — the order she received a cheque for was never entered.
-Checkout → Calico Point Fabric → items → Payment: **Check** (that records it as
-paid immediately; "Invoice (Pay Later)" is the one that creates an open invoice).
+**Six sales were lost and need re-entering.** `commit_sale` used to reserve the
+invoice number before writing the row, so a failed write spent the number and
+the sale disappeared with no row and no line items. That is fixed, but the six
+already lost cannot be recovered from the app — the data was never written.
+Each can be bracketed by the invoices either side of it:
+
+| Lost invoice | Rung up between |
+|---|---|
+| 10032 | 2026-03-31 04:03 and 2026-03-31 17:08 |
+| 10040 | 2026-03-31 18:57 and 2026-03-31 19:16 |
+| 10081 | 2026-05-05 17:06 and 2026-05-07 11:51 |
+| 10101 | 2026-05-18 13:49 and 2026-05-19 10:41 |
+| 10124 | 2026-06-16 14:44 and 2026-06-23 11:19 |
+| 10143 | 2026-07-07 11:34 and 2026-07-07 12:27 |
+
+**The Calico Point sale ($357.17)** is almost certainly one of these — the amount
+appears nowhere in the database, as a total, a line-item sum, or any cell. She
+looked back to April, which rules out the two from March, leaving 10081, 10101,
+10124 and 10143. Re-enter it via Checkout → Calico Point Fabric → items →
+Payment: **Check** (that records it as paid immediately; "Invoice (Pay Later)"
+is the one that creates an open invoice). Worth checking her paper records
+against the other three dates too.
 
 ---
 
