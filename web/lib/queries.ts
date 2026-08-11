@@ -516,6 +516,16 @@ export async function getInvoiceNumbering() {
 }
 
 /**
+ * Who a cheque should be made out to.
+ *
+ * Printed at the foot of every unpaid invoice. It is not the shop's name —
+ * cheques are written to the person who banks them, and "Notion to Sew" isn't
+ * what's on the account.
+ */
+export const payableTo = (settings: Record<string, string>) =>
+  settings.PayableTo?.trim() || settings.CompanyName?.trim() || "Notion to Sew";
+
+/**
  * Whether a sale must be attached to somebody.
  *
  * Defaults to yes. Six invoices in the book are filed against nobody because

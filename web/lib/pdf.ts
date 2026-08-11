@@ -55,7 +55,7 @@ function rule(page: PDFPage, y: number, from = M, to = PAGE.w - M, color = LINE)
 export type InvoicePdfInput = {
   invoice: Invoice;
   lines: InvoiceLine[];
-  company: { name: string; address: string };
+  company: { name: string; address: string; payableTo?: string };
   customer: { name: string; address?: string | null; email?: string | null };
 };
 
@@ -216,7 +216,7 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
   // ---- footer ------------------------------------------------------------
   const foot = isPaid
     ? "Thank you for your business."
-    : "Please make checks payable to " + company.name + ". Thank you!";
+    : "Please make checks payable to " + (company.payableTo || company.name) + ". Thank you!";
   page.drawText(safe(foot), { x: M, y: M - 12, size: 9, font: fonts.regular, color: FAINT });
 
   return doc.save();

@@ -5,7 +5,7 @@ import { requireStaff } from "@/lib/auth";
 import { ok, fail, explain, type ActionResult } from "@/lib/action-result";
 import { putSecret, removeSecret, describeSecret } from "@/lib/secrets";
 import { verifyMail, sendTestEmail, sendReceipt, mailConfigured } from "@/lib/mail";
-import { getSettings, getInvoice, getInvoiceLines, getCustomer } from "@/lib/queries";
+import { getSettings, getInvoice, getInvoiceLines, getCustomer, payableTo, } from "@/lib/queries";
 import { buildInvoicePdf } from "@/lib/pdf";
 import { money } from "@/lib/format";
 
@@ -168,7 +168,11 @@ export async function resendAction(logId: number): Promise<ActionResult> {
     const pdf = await buildInvoicePdf({
       invoice,
       lines,
-      company: { name: settings.CompanyName || "Notion to Sew", address: settings.Address || "" },
+      company: {
+        name: settings.CompanyName || "Notion to Sew",
+        address: settings.Address || "",
+        payableTo: payableTo(settings),
+      },
       customer: {
         name: customer?.name ?? invoice.customer_name ?? "Guest",
         address: customer?.address,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getInvoice, getInvoiceLines, getSettings, getCustomer } from "@/lib/queries";
+import { getInvoice, getInvoiceLines, getSettings, getCustomer, payableTo, } from "@/lib/queries";
 import { buildInvoicePdf } from "@/lib/pdf";
 import { isStaff } from "@/lib/auth";
 import { validReceiptToken } from "@/lib/receipt-token";
@@ -43,6 +43,7 @@ export async function GET(
     company: {
       name: settings.CompanyName || "Notion to Sew",
       address: settings.Address || "",
+      payableTo: payableTo(settings),
     },
     customer: {
       name: customer?.name ?? invoice.customer_name ?? "Guest",

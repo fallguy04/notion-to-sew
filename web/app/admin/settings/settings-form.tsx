@@ -10,11 +10,13 @@ export default function SettingsForm({
   ratePct,
   categories,
   requireCustomer,
+  payableTo,
 }: {
   settings: Record<string, string>;
   ratePct: string;
   categories: string;
   requireCustomer: boolean;
+  payableTo: string;
 }) {
   const [result, action] = useActionState(saveSettingsAction, null);
 
@@ -30,6 +32,12 @@ export default function SettingsForm({
               required
               className="field"
             />
+          </Field>
+          <Field
+            label="Cheques payable to"
+            hint="Printed at the foot of every unpaid invoice — the name on the bank account, not the shop's."
+          >
+            <input name="payable_to" defaultValue={payableTo} required className="field" />
           </Field>
           <Field label="Address">
             <textarea

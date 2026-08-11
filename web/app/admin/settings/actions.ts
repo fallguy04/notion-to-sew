@@ -15,6 +15,9 @@ export async function saveSettingsAction(
     const name = String(form.get("company_name") ?? "").trim();
     if (!name) return fail("The shop needs a name — it goes on every invoice.");
 
+    const payable = String(form.get("payable_to") ?? "").trim();
+    if (!payable) return fail("Say who cheques should be made out to.");
+
     // Entered as a percentage, stored as a decimal. The old settings screen
     // stored whichever the box happened to contain, so the same field meant
     // 7.875% on one save and 787.5% on the next.
@@ -33,6 +36,7 @@ export async function saveSettingsAction(
 
     await updateSettings({
       CompanyName: name,
+      PayableTo: payable,
       Address: multiline(form.get("address")),
       TaxRate: String(ratePct / 100),
       VenmoUser: String(form.get("venmo_user") ?? "").trim().replace(/^@/, ""),
