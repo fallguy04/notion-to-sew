@@ -5,7 +5,21 @@ Ordered by consequence. **P0** means a real risk is live right now.
 
 ---
 
-## P0 — Credentials are public. Do this first.
+## P0 — DONE: credentials rotated (2026-08-11)
+
+The Google service-account key has been revoked and verified dead. The app no
+longer uses a Google key at all — the live code path references zero of them —
+so the copy in this repo's history is inert. `.streamlit/secrets.toml` is no
+longer tracked.
+
+**Still confirm:** the *old* Gmail app password and the *old* admin PIN are in
+the git history too. Deleting the old app password at
+myaccount.google.com/apppasswords is what kills it; changing the PIN in
+Streamlit Cloud is what kills that one. Neither can be verified from outside.
+
+<details><summary>Original instructions, kept for reference</summary>
+
+### Credentials were public
 
 `.streamlit/secrets.toml` is committed to this repository and the repository is
 public. It contains the Google service-account **private key** (full read/write
@@ -26,6 +40,28 @@ shop offline.
 | 6 | Consider making the repo private, or deleting and recreating it so the history goes. Note: Streamlit Community Cloud needs private-repo access granted first, or the deployment breaks | Michael |
 
 Until step 1 is done, treat the database as compromised.
+
+---
+
+</details>
+
+---
+
+## DONE: running on Postgres (2026-08-11)
+
+Neon `us-west-2`, Postgres 18.4. The Streamlit app reads and writes it; the
+Google Sheet is frozen and should be renamed to make that obvious.
+
+    customers 226 · products 1507 · invoices 1374 · lines 7825
+    paid revenue $74,749.47 · integrity problems 0
+
+Every incident from this project is now refused by the engine rather than
+policed by application code: duplicate CustomerID, duplicate SKU, duplicate
+invoice number, negative credit, orphan lines, paid-with-no-timestamp. Selling
+is one `record_sale()` transaction.
+
+**Next: rename the Sheet** to "NotionToSew_DB (ARCHIVED — read only)" so nobody
+trusts a stale number.
 
 ---
 
