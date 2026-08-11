@@ -1,8 +1,16 @@
-streamlit
-pandas
-gspread
-google-auth
-fpdf
-streamlit-pdf-viewer
-streamlit-extras
-pytz
+# Pinned deliberately. This app deploys straight to a live shop, so an upstream
+# release must never land without someone choosing it. Bump these on purpose,
+# one at a time, and check the app afterwards.
+streamlit==1.50.0
+pandas==2.3.3
+gspread==6.2.1
+google-auth==2.50.0
+pytz==2026.3.post1
+streamlit-pdf-viewer==0.0.30
+streamlit-extras==0.7.8
+
+# fpdf 1.7.2 is the last release under this name and dates from 2012. The
+# invoice layout in create_pdf() is written against its API, so it stays pinned
+# here rather than being swapped for fpdf2 as a side effect of a dependency
+# bump. Migrating to fpdf2 is its own task, with the PDFs checked side by side.
+fpdf==1.7.2

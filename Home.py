@@ -704,11 +704,18 @@ elif menu == "🛒 Checkout":
                             
                             status = "Pending" if pay_method == "Invoice (Pay Later)" else "Paid"
                             with st.spinner("Processing..."):
-                                new_id = db.commit_sale(
-                                    st.session_state['cart'], cart_total, tax_amt, cust_id, 
-                                    pay_method, is_wholesale, status, credit_used=credit_applied
-                                )
-                                
+                                try:
+                                    new_id = db.commit_sale(
+                                        st.session_state['cart'], cart_total, tax_amt, cust_id,
+                                        pay_method, is_wholesale, status, credit_used=credit_applied
+                                    )
+                                except Exception as e:
+                                    # Never leave the cart in a state where the sale
+                                    # looks complete but nothing was written.
+                                    st.error(f"❌ **The sale was not saved.** {e}")
+                                    st.warning("Your cart has been kept — try Complete Order again.")
+                                    st.stop()
+
                                 # Record Freight if applicable
                                 if freight > 0:
                                     db.record_freight(new_id, freight)
@@ -908,11 +915,16 @@ elif menu == "👥 Customers":
                         )
                         if st.form_submit_button("💾 Save Changes"):
                             tax_override_decimal = u_tax_override / 100.0 if u_tax_override > 0 else None
-                            db.update_customer_details(cid, u_name, u_addr, u_phone, u_notes,
-                                                       is_wholesale=u_wholesale,
-                                                       tax_rate_override=tax_override_decimal)
-                            st.success("Saved!")
-                            auto_refresh()
+                            # update_customer_details swallows its errors and returns
+                            # False; reporting "Saved!" regardless hides lost edits.
+                            if db.update_customer_details(cid, u_name, u_addr, u_phone, u_notes,
+                                                          is_wholesale=u_wholesale,
+                                                          tax_rate_override=tax_override_decimal):
+                                st.success("Saved!")
+                                auto_refresh()
+                            else:
+                                st.error("❌ Not saved — the database rejected the change. "
+                                         "Check your connection and try again.")
                     
                     st.write("")
                     with st.expander("🗑️ Delete Profile"):
@@ -926,11 +938,13 @@ elif menu == "👥 Customers":
                             )
                         elif st.checkbox(f"I confirm deletion of {row['Name']}", key="del_chk"):
                             if st.button("Delete Permanently", type="primary"):
-                                db.delete_customer(cid)
-                                st.session_state['active_cust_id'] = None
-                                st.session_state['active_cust_row'] = None
-                                st.success("Deleted.")
-                                auto_refresh()
+                                if db.delete_customer(cid):
+                                    st.session_state['active_cust_id'] = None
+                                    st.session_state['active_cust_row'] = None
+                                    st.success("Deleted.")
+                                    auto_refresh()
+                                else:
+                                    st.error("❌ Not deleted — the database rejected the change.")
 
                 st.divider()
                 

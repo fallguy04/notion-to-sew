@@ -401,8 +401,13 @@ elif st.session_state['page'] == 'checkout':
                             'email_sent': False, 'total': max(0.0, total - credit_applied),
                         }
                         st.session_state['kiosk_cart'] = []; st.session_state['page'] = 'success'
-                        db.force_refresh(); st.rerun()
-                except Exception as e: st.error(f"Error: {e}")
+                        # commit_sale already invalidated the tabs it wrote to;
+                        # a blanket refresh here re-downloads the whole workbook.
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"❌ **The sale was not saved.** {e}")
+                    st.warning("The cart has been kept — please try Finish Sale again, "
+                               "or ask for help.")
 
     st.write("<br><br><br><br>", unsafe_allow_html=True); st.caption("Notion to Sew · Kiosk v1.2")
 

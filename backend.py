@@ -13,6 +13,19 @@ import pytz
 from fpdf import FPDF
 
 # --- CONNECTIVITY ---
+SPREADSHEET_NAME = "NotionToSew_DB"
+
+# Which worksheet backs each key of get_data(), so a write can invalidate just
+# the tab it touched instead of re-downloading the whole workbook.
+SHEETS = {
+    "inventory":    "Inventory",
+    "transactions": "Transactions",
+    "items":        "TransactionItems",
+    "customers":    "Customers",
+    "settings":     "Settings",
+    "expenses":     "Expenses",
+}
+
 @st.cache_resource
 def get_client():
     """Connects to Google Cloud."""
@@ -20,31 +33,59 @@ def get_client():
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=600)
-def get_data():
-    """Fetches all data tables (Cached to save Quota)."""
+@st.cache_resource
+def get_sheet():
+    """Opens the workbook once per session and reuses the handle.
+
+    Every write used to call client.open(SPREADSHEET_NAME), which costs a Drive
+    search on each call (~0.75s vs ~0.15s for open_by_key). Set a top-level
+    `spreadsheet_key` in secrets to skip the search entirely; opening by name
+    also risks picking up a different file that happens to share the title.
+    """
     client = get_client()
+    key = None
     try:
-        sh = client.open("NotionToSew_DB")
-        try:
-            expenses_df = pd.DataFrame(sh.worksheet("Expenses").get_all_records())
-        except Exception:
-            expenses_df = pd.DataFrame()
-        return {
-            "inventory": pd.DataFrame(sh.worksheet("Inventory").get_all_records()),
-            "transactions": pd.DataFrame(sh.worksheet("Transactions").get_all_records()),
-            "items": pd.DataFrame(sh.worksheet("TransactionItems").get_all_records()),
-            "customers": pd.DataFrame(sh.worksheet("Customers").get_all_records()),
-            "settings": pd.DataFrame(sh.worksheet("Settings").get_all_records()),
-            "expenses": expenses_df
-        }
+        key = st.secrets.get("spreadsheet_key") or None
+    except Exception:
+        pass
+    return client.open_by_key(key) if key else client.open(SPREADSHEET_NAME)
+
+@st.cache_data(ttl=600)
+def _read_sheet(tab_name):
+    """One worksheet as a DataFrame, cached per tab."""
+    return pd.DataFrame(get_sheet().worksheet(tab_name).get_all_records())
+
+def get_data():
+    """All data tables. Each tab is cached separately, so refreshing after a
+    write only re-downloads what actually changed."""
+    try:
+        out = {}
+        for key, tab in SHEETS.items():
+            try:
+                out[key] = _read_sheet(tab)
+            except Exception:
+                # A missing optional tab (Expenses) shouldn't sink the whole load.
+                if key == "expenses":
+                    out[key] = pd.DataFrame()
+                else:
+                    raise
+        return out
     except Exception as e:
         st.error(f"🚨 Database Error: {e}")
         return {}
 
 # --- HELPER: Force Cache Clear ---
-def force_refresh():
-    get_data.clear()
+def force_refresh(*tabs):
+    """Invalidates cached reads. Pass the worksheet names that changed, e.g.
+    force_refresh("Customers"). With no arguments every tab is dropped."""
+    if tabs:
+        for tab in tabs:
+            try:
+                _read_sheet.clear(tab)
+            except Exception:
+                _read_sheet.clear()   # older Streamlit can't clear a single entry
+    else:
+        _read_sheet.clear()
     return True
 
 def check_integrity():
@@ -116,8 +157,7 @@ def get_tax_rate() -> float:
 # --- LOGIC & WRITES ---
 
 def add_customer(name, email, is_wholesale=False):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Customers")
     # Ensure IsWholesale and TaxRate column headers exist
     headers = ws.row_values(1)
@@ -135,22 +175,20 @@ def add_customer(name, email, is_wholesale=False):
 
     date_joined = datetime.now().strftime("%Y-%m-%d")
     ws.append_row([new_id, name, email, "", date_joined, "", "", 0.0, "TRUE" if is_wholesale else "FALSE", ""])
-    force_refresh()
+    force_refresh("Customers")
     return new_id
 
 # UPDATED: Added cost parameter
 def add_inventory_item(sku, name, price, stock, wholesale_price, cost):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Inventory")
     # Cost is added as the 6th column (Column F)
     ws.append_row([sku, name, price, stock, wholesale_price, cost])
-    return force_refresh()
+    return force_refresh("Inventory")
 
 # NEW: Specific function to Restock (Safer than full rewrite)
 def restock_item(sku, qty_to_add, new_cost=None):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Inventory")
     
     try:
@@ -165,7 +203,7 @@ def restock_item(sku, qty_to_add, new_cost=None):
              # but assuming schema is set:
             ws.update_cell(cell.row, 6, new_cost)
             
-        return force_refresh()
+        return force_refresh("Inventory")
     except Exception:
         return False
 
@@ -174,8 +212,7 @@ def update_inventory_batch(df_changes):
     if df_changes.empty:
         return False # Safety guard: never wipe the sheet if DF is empty
         
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Inventory")
     
     # 1. Prepare data
@@ -196,13 +233,12 @@ def update_inventory_batch(df_changes):
         last_col = chr(ord('A') + len(headers) - 1)
         ws.batch_clear([f"A{new_row_count + 1}:{last_col}{current_row_count}"])
 
-    return force_refresh()
+    return force_refresh("Inventory")
 
 # ... (Rest of commit_sale, mark_invoice_paid, etc. remains the same) ...
 
 def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status="Paid", credit_used=0.0):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     
     # 1. Deduct Credit
     if credit_used > 0 and cust_id:
@@ -211,30 +247,46 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
             cell = ws_cust.find(cust_id, in_column=1)
             current_credit = float(ws_cust.cell(cell.row, 8).value or 0)
             ws_cust.update_cell(cell.row, 8, max(0.0, current_credit - credit_used))
-        except: pass
+        except Exception as e:
+            # Silently keeping the credit means the customer is charged twice for
+            # it later. Fail the sale instead so it can be redone.
+            raise RuntimeError(f"Could not apply store credit for {cust_id}: {e}")
 
     # 2. Invoice ID
     tz = pytz.timezone("America/Los_Angeles")
     date_now = datetime.now(tz)
-    
+
     ws_set = sh.worksheet("Settings")
+    counter_cell = None
     try:
         cell = ws_set.find("NextInvoiceID", in_column=1)
         current_id = int(ws_set.cell(cell.row, cell.col + 1).value)
         ws_set.update_cell(cell.row, cell.col + 1, current_id + 1)
         invoice_id = str(current_id)
+        counter_cell = (cell.row, cell.col + 1, current_id)
     except:
         invoice_id = f"INV-{date_now.strftime('%H%M%S')}"
 
     due_date = (date_now + timedelta(days=30 if is_wholesale else 0)).strftime("%Y-%m-%d")
     final_pay_method = f"{payment_method} (+${credit_used} Credit)" if credit_used > 0 else payment_method
-    
+
     # 3. Transaction
-    sh.worksheet("Transactions").append_row([
-        invoice_id, date_now.strftime("%Y-%m-%d %H:%M:%S"), total, final_pay_method, 
-        cust_id, status, due_date, tax, "TRUE" if is_wholesale else "FALSE"
-    ])
-    
+    # The invoice number is reserved above *before* this row is written. If the
+    # write fails the number is spent and the sale disappears with no trace —
+    # six sales were lost that way before this rollback existed. Put the counter
+    # back so the next attempt reuses the number rather than skipping it.
+    try:
+        sh.worksheet("Transactions").append_row([
+            invoice_id, date_now.strftime("%Y-%m-%d %H:%M:%S"), round(float(total), 2), final_pay_method,
+            cust_id, status, due_date, round(float(tax), 2), "TRUE" if is_wholesale else "FALSE"
+        ])
+    except Exception as e:
+        if counter_cell:
+            row, col, original = counter_cell
+            try: ws_set.update_cell(row, col, original)
+            except Exception: pass
+        raise RuntimeError(f"Sale was NOT saved — invoice {invoice_id} could not be written: {e}")
+
     # 4. Items
     items_rows = []
     for item in cart:
@@ -255,26 +307,25 @@ def commit_sale(cart, total, tax, cust_id, payment_method, is_wholesale, status=
             except: curr_stock = 0
             updates.append({'range': f'D{row_num}', 'values': [[max(0, curr_stock - item['qty'])]]})
     if updates: ws_inv.batch_update(updates)
-    force_refresh()
+    force_refresh("Transactions", "TransactionItems", "Inventory", "Customers", "Settings")
     return invoice_id
 
 def record_freight(invoice_id, amount):
     """Appends a freight line item to TransactionItems."""
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
-    sh.worksheet("TransactionItems").append_row([invoice_id, "FREIGHT", 1, amount, "Shipping"])
+    sh = get_sheet()
+    sh.worksheet("TransactionItems").append_row([invoice_id, "FREIGHT", 1, round(float(amount), 2), "Shipping"])
+    force_refresh("TransactionItems")
     return True
 
 def mark_invoice_paid(invoice_id):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Transactions")
     invoice_id_str = str(invoice_id).strip()
     # Try direct find first (fast path)
     try:
         cell = ws.find(invoice_id_str, in_column=1)
         ws.update_cell(cell.row, 6, "Paid")
-        return force_refresh()
+        return force_refresh("Transactions")
     except Exception:
         pass
     # Fallback: scan all rows to handle float-formatted IDs ("1001.0" vs "1001")
@@ -293,14 +344,13 @@ def mark_invoice_paid(invoice_id):
                 match = cell_val == invoice_id_str
             if match:
                 ws.update_cell(row_idx + 1, 6, "Paid")
-                return force_refresh()
+                return force_refresh("Transactions")
     except Exception:
         pass
     return False
 
 def delete_invoice(invoice_id):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws_trans = sh.worksheet("Transactions")
     try: ws_trans.delete_rows(ws_trans.find(str(invoice_id), in_column=1).row)
     except: pass
@@ -308,11 +358,10 @@ def delete_invoice(invoice_id):
     try:
         while True: ws_items.delete_rows(ws_items.find(str(invoice_id), in_column=1).row)
     except: pass
-    return force_refresh()
+    return force_refresh("Transactions", "TransactionItems")
 
 def update_customer_details(cust_id, new_name, address, phone, notes, is_wholesale=None, tax_rate_override=None):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Customers")
     try:
         cell = ws.find(cust_id, in_column=1)
@@ -333,21 +382,19 @@ def update_customer_details(cust_id, new_name, address, phone, notes, is_wholesa
                     headers.append('TaxRate')
                 val = str(tax_rate_override) if tax_rate_override else ""
                 ws.update_cell(cell.row, headers.index('TaxRate') + 1, val)
-        return force_refresh()
+        return force_refresh("Customers")
     except Exception: return False
 
 def delete_customer(cust_id):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Customers")
     try:
         ws.delete_rows(ws.find(cust_id, in_column=1).row)
-        return force_refresh()
+        return force_refresh("Customers")
     except: return False
 
 def sell_gift_certificate(giver_id, receiver_id, amount, pay_method):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     
     # 1. Invoice ID & Timestamp
     tz = pytz.timezone("America/Los_Angeles")
@@ -380,26 +427,24 @@ def sell_gift_certificate(giver_id, receiver_id, amount, pay_method):
         ws_cust.update_cell(cell.row, 8, curr + amount)
     except: pass
 
-    force_refresh()
+    force_refresh("Transactions", "TransactionItems", "Customers", "Settings")
     return invoice_id
 
 def update_settings(updates_dict):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Settings")
     data = ws.get_all_records()
     key_map = {row['Key']: i + 2 for i, row in enumerate(data)}
     for key, new_val in updates_dict.items():
         if key in key_map: ws.update_cell(key_map[key], 2, new_val)
         else: ws.append_row([key, new_val])
-    return force_refresh()
+    return force_refresh("Settings")
 
 def add_expense(date, category, amount, description):
-    client = get_client()
-    sh = client.open("NotionToSew_DB")
+    sh = get_sheet()
     ws = sh.worksheet("Expenses")
     ws.append_row([str(date), category, f"{float(amount):.3f}", description])
-    return force_refresh()
+    return force_refresh("Expenses")
 
 # --- PDF GENERATOR ---
 def create_pdf(invoice_id, customer_name, company_address, cart, subtotal, tax, total, due_date, credit_applied=0.0, transaction_date=None, discount_amount=0.0, freight_amount=0.0):
