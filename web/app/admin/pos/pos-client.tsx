@@ -60,6 +60,7 @@ export default function PosClient({
   // Blank means today. Only shown when asked for — re-entering a sale from
   // another day is rare, and a date box on every sale invites a wrong one.
   const [soldOn, setSoldOn] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [backdating, setBackdating] = useState(false);
   const [done, setDone] = useState<SaleResponse | null>(null);
   const [pending, start] = useTransition();
@@ -109,6 +110,7 @@ export default function PosClient({
     setUseCredit(true);
     setPayment("check");
     setSoldOn("");
+    setInvoiceNumber("");
     setBackdating(false);
     setDone(null);
   }
@@ -131,6 +133,7 @@ export default function PosClient({
         termsDays: payment === "invoice" ? termsDays : 0,
         expectedTotal: totals.total,
         soldOn: backdating && soldOn ? soldOn : null,
+        invoiceNumber: backdating && invoiceNumber ? parseInt(invoiceNumber, 10) : null,
       });
       if (res.ok) setDone(res);
       else toast(res.message, "bad");
@@ -440,11 +443,30 @@ export default function PosClient({
                           className="field"
                         />
                       </Field>
+                      <div className="mt-3">
+                        <Field
+                          label="Invoice number"
+                          hint="Only to reclaim one the old app spent without saving the sale. Leave blank for the next one."
+                        >
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            step="1"
+                            min="1"
+                            value={invoiceNumber}
+                            placeholder="next available"
+                            onFocus={(e) => e.currentTarget.select()}
+                            onChange={(e) => setInvoiceNumber(e.target.value)}
+                            className="no-spin field"
+                          />
+                        </Field>
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
                           setBackdating(false);
                           setSoldOn("");
+                          setInvoiceNumber("");
                         }}
                         className="btn btn-quiet btn-sm mt-2"
                       >

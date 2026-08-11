@@ -26,6 +26,8 @@ export type SaleRequest = {
   expectedTotal: number;
   /** yyyy-mm-dd, for re-entering a sale that happened on another day. */
   soldOn?: string | null;
+  /** Reclaims a number the old app spent without writing the sale. */
+  invoiceNumber?: number | null;
 };
 
 export type SaleResponse = {
@@ -122,11 +124,12 @@ export async function recordSaleAction(req: SaleRequest): Promise<SaleResponse> 
       termsDays: clamp(Math.round(req.termsDays ?? 0), 0, 365),
     });
 
+    const { sql } = await import("@/lib/db");
+
     // Re-entering a sale from another day: put it on that day, at midday shop
     // time so it can't drift either side of midnight. A paid invoice carries
     // its payment date with it.
     if (req.soldOn && /^\d{4}-\d{2}-\d{2}$/.test(req.soldOn)) {
-      const { sql } = await import("@/lib/db");
       await sql`
         UPDATE invoices
            SET sold_at = ((${req.soldOn}::date)::timestamp + interval '12 hours')
@@ -136,6 +139,42 @@ export async function recordSaleAction(req: SaleRequest): Promise<SaleResponse> 
                                      AT TIME ZONE 'America/Los_Angeles'
                               ELSE paid_at END
          WHERE id = ${invoiceId}`;
+    }
+
+    // Reclaiming a spent number. Checked here rather than only in the form,
+    // and only downwards into an existing gap — letting it jump ahead would
+    // collide with a number the sequence has yet to hand out. The lines and
+    // stock movements follow the invoice, by ON UPDATE CASCADE.
+    let finalId = invoiceId;
+    const wanted = Math.round(req.invoiceNumber ?? 0);
+    if (wanted > 0 && wanted !== invoiceId) {
+      const [{ taken, highest }] = (await sql`
+        SELECT EXISTS (SELECT 1 FROM invoices WHERE id = ${wanted}) AS taken,
+               (SELECT COALESCE(MAX(id), 0) FROM invoices)::int      AS highest`) as {
+        taken: boolean;
+        highest: number;
+      }[];
+
+      if (taken) {
+        return {
+          ok: false,
+          message: `Invoice ${wanted} already exists. The sale was saved as #${invoiceId} — open it if you meant to change something.`,
+          invoiceId,
+          token: receiptToken(invoiceId),
+          total,
+        };
+      }
+      if (wanted >= highest) {
+        return {
+          ok: false,
+          message: `${wanted} isn't a gap in the numbering. The sale was saved as #${invoiceId}.`,
+          invoiceId,
+          token: receiptToken(invoiceId),
+          total,
+        };
+      }
+      await sql`UPDATE invoices SET id = ${wanted} WHERE id = ${invoiceId}`;
+      finalId = wanted;
     }
 
     revalidatePath("/admin");
@@ -148,10 +187,10 @@ export async function recordSaleAction(req: SaleRequest): Promise<SaleResponse> 
       ok: true,
       message:
         status === "pending"
-          ? `Invoice #${invoiceId} created for ${money(total)}.`
-          : `Sale #${invoiceId} recorded — ${money(total)}.`,
-      invoiceId,
-      token: receiptToken(invoiceId),
+          ? `Invoice #${finalId} created for ${money(total)}.`
+          : `Sale #${finalId} recorded — ${money(total)}.`,
+      invoiceId: finalId,
+      token: receiptToken(finalId),
       total,
     };
   } catch (e) {
