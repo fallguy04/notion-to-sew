@@ -6,6 +6,8 @@ import {
   getSettings,
   getCustomer,
   getCustomers,
+  getReturns,
+  returnedSoFar,
 } from "@/lib/queries";
 import { mailConfigured } from "@/lib/mail";
 import { money, unitPrice, shortDate, dateTime, invoiceMaths } from "@/lib/format";
@@ -13,6 +15,7 @@ import { Card, StatusPill, Note } from "@/components/ui";
 import InvoiceActions from "@/components/invoice-actions";
 import FreightBox from "./freight-box";
 import AssignCustomer from "./assign-customer";
+import ReturnItems from "./return-items";
 
 export const dynamic = "force-dynamic";
 
@@ -32,17 +35,25 @@ export default async function InvoicePage({
   ]);
   if (!invoice) notFound();
 
-  const [customer, customers] = await Promise.all([
+  const [customer, customers, returns, returned] = await Promise.all([
     invoice.customer_id ? getCustomer(invoice.customer_id) : Promise.resolve(null),
     getCustomers(),
+    getReturns(id),
+    returnedSoFar(id),
   ]);
   const company = settings.CompanyName || "Notion to Sew";
+  const isReturn = invoice.returns_id !== null;
 
   // Shipping lives in the line items, so the stored subtotal contains it; and
   // older records disagree about whether tax belongs in the total. invoiceMaths
   // reads this particular invoice and returns rows that add up to what it was
   // settled for.
   const { goods, shipping, taxIncluded, adjustment } = invoiceMaths(invoice, lines);
+
+  // A return stores every figure negative — that is what makes the books add
+  // up — but the document itself should read "Refunded $5.39" rather than a
+  // column of minus signs.
+  const flip = (n: number) => (isReturn ? -n : n);
 
   return (
     <>
@@ -53,13 +64,24 @@ export default async function InvoicePage({
         >
           <span aria-hidden>←</span> {customer ? customer.name : "Dashboard"}
         </Link>
-        <InvoiceActions
-          id={invoice.id}
-          status={invoice.status}
-          total={invoice.total}
-          defaultEmail={customer?.email}
-          mailReady={await mailConfigured()}
-        />
+        <div className="flex flex-wrap items-center gap-1">
+          {!isReturn && lines.length > 0 && (
+            <ReturnItems
+              invoiceId={invoice.id}
+              lines={lines}
+              alreadyReturned={Object.fromEntries(returned)}
+              taxRate={invoice.subtotal > 0 ? invoice.tax / invoice.subtotal : 0}
+              hasCustomer={invoice.customer_id !== null}
+            />
+          )}
+          <InvoiceActions
+            id={invoice.id}
+            status={invoice.status}
+            total={invoice.total}
+            defaultEmail={customer?.email}
+            mailReady={await mailConfigured()}
+          />
+        </div>
       </div>
 
       <Card className="overflow-hidden">
@@ -77,7 +99,7 @@ export default async function InvoicePage({
             </div>
             <div className="text-right">
               <div className="font-display text-[22px] font-semibold">
-                {invoice.status === "paid" ? "Receipt" : "Invoice"}
+                {isReturn ? "Return" : invoice.status === "paid" ? "Receipt" : "Invoice"}
               </div>
               <div className="tabular text-[14px] text-ink-faint">No. {invoice.id}</div>
               <div className="mt-2 flex justify-end">
@@ -151,9 +173,9 @@ export default async function InvoicePage({
                   <tr key={l.id}>
                     <td className="whitespace-nowrap text-ink-faint">{l.sku ?? "—"}</td>
                     <td className="font-medium">{l.description}</td>
-                    <td className="num">{trim(l.qty)}</td>
+                    <td className="num">{trim(flip(l.qty))}</td>
                     <td className="num">{unitPrice(l.unit_price)}</td>
-                    <td className="num font-medium">{money(l.line_total)}</td>
+                    <td className="num font-medium">{money(flip(l.line_total))}</td>
                   </tr>
                 ))
               )}
@@ -163,10 +185,12 @@ export default async function InvoicePage({
 
         <div className="flex justify-end border-t border-line-soft px-6 py-5 sm:px-8">
           <dl className="w-full max-w-[280px] text-[14px]">
-            <Row label="Subtotal" value={money(goods)} />
+            <Row label="Subtotal" value={money(flip(goods))} />
             {invoice.discount > 0 && <Row label="Discount" value={`−${money(invoice.discount)}`} />}
-            {shipping > 0 && <Row label="Shipping" value={money(shipping)} />}
-            {taxIncluded && invoice.tax > 0 && <Row label="Sales tax" value={money(invoice.tax)} />}
+            {shipping > 0 && <Row label="Shipping" value={money(flip(shipping))} />}
+            {taxIncluded && flip(invoice.tax) > 0 && (
+              <Row label="Sales tax" value={money(flip(invoice.tax))} />
+            )}
             {invoice.credit_applied > 0 && (
               <Row label="Store credit" value={`−${money(invoice.credit_applied)}`} />
             )}
@@ -178,15 +202,56 @@ export default async function InvoicePage({
             )}
             <div className="mt-2 flex items-baseline justify-between border-t border-line pt-2.5">
               <dt className="font-display text-[15px] font-semibold">
-                {invoice.status === "paid" ? "Paid" : "Amount due"}
+                {isReturn ? "Refunded" : invoice.status === "paid" ? "Paid" : "Amount due"}
               </dt>
               <dd className="tabular font-display text-[20px] font-semibold">
-                {money(invoice.total)}
+                {money(flip(invoice.total))}
               </dd>
             </div>
           </dl>
         </div>
       </Card>
+
+      {/* Both halves of a return point at each other, so neither can be read
+          without the other turning up. */}
+      {isReturn && (
+        <div className="mt-5">
+          <Note tone="info">
+            Returned against{" "}
+            <Link href={`/admin/invoices/${invoice.returns_id}`} className="underline">
+              invoice #{invoice.returns_id}
+            </Link>
+            . The items went back into stock and the sales tax came back off.
+          </Note>
+        </div>
+      )}
+
+      {returns.length > 0 && (
+        <Card className="mt-5">
+          <div className="border-b border-line-soft px-5 py-3.5">
+            <h2 className="font-display text-[15px] font-semibold">
+              {returns.length === 1 ? "One return" : `${returns.length} returns`} against this sale
+            </h2>
+          </div>
+          <ul className="divide-y divide-line-soft">
+            {returns.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                <Link
+                  href={`/admin/invoices/${r.id}`}
+                  className="text-[14px] font-medium hover:text-spruce"
+                >
+                  Return #{r.id}
+                </Link>
+                <span className="text-[13px] text-ink-faint">
+                  {shortDate(r.sold_at)}
+                  {r.payment ? ` · ${r.payment === "credit" ? "store credit" : r.payment}` : ""}
+                </span>
+                <span className="tabular text-[14px] font-medium">{money(-r.total)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {invoice.status !== "paid" && (
         <div className="no-print mt-5">

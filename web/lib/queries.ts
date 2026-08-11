@@ -182,7 +182,7 @@ export async function getCustomerInvoices(customerId: string): Promise<Invoice[]
            i.tax::float8 AS tax, i.credit_applied::float8 AS credit_applied,
            i.total::float8 AS total, i.is_wholesale,
            to_char(i.due_date, 'YYYY-MM-DD') AS due_date,
-           i.sold_at, i.paid_at, i.note
+           i.sold_at, i.paid_at, i.note, i.returns_id
       FROM invoices i
       LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.customer_id = ${customerId}
@@ -198,11 +198,41 @@ export async function getInvoice(id: number): Promise<Invoice | null> {
            i.tax::float8 AS tax, i.credit_applied::float8 AS credit_applied,
            i.total::float8 AS total, i.is_wholesale,
            to_char(i.due_date, 'YYYY-MM-DD') AS due_date,
-           i.sold_at, i.paid_at, i.note
+           i.sold_at, i.paid_at, i.note, i.returns_id
       FROM invoices i
       LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.id = ${id}`;
   return (rows[0] as Invoice) ?? null;
+}
+
+/**
+ * How much of each line has already come back, so nothing is returned twice.
+ *
+ * Keyed by SKU and description together: a return's lines are copies of the
+ * originals, not references to them, and a hand-typed line has no SKU at all.
+ */
+export async function returnedSoFar(invoiceId: number) {
+  const rows = (await sql`
+    SELECT l.description, COALESCE(l.sku, '') AS sku, SUM(-l.qty)::float8 AS qty
+      FROM invoice_lines l
+      JOIN invoices r ON r.id = l.invoice_id
+     WHERE r.returns_id = ${invoiceId}
+     GROUP BY l.description, COALESCE(l.sku, '')`) as {
+    description: string;
+    sku: string;
+    qty: number;
+  }[];
+  return new Map(rows.map((r) => [`${r.sku}|${r.description}`, r.qty]));
+}
+
+/** The returns written against one sale, newest first. */
+export async function getReturns(invoiceId: number) {
+  const rows = await sql`
+    SELECT id, total::float8 AS total, payment::text AS payment, sold_at
+      FROM invoices
+     WHERE returns_id = ${invoiceId}
+     ORDER BY sold_at DESC, id DESC`;
+  return rows as { id: number; total: number; payment: string | null; sold_at: string }[];
 }
 
 export async function getInvoiceLines(id: number): Promise<InvoiceLine[]> {

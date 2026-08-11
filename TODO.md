@@ -95,6 +95,44 @@ Two things worth knowing about the design:
 
 ---
 
+## DONE: returns (2026-08-11)
+
+Virginia Skiles bought five serger threads and brought one back, and there was
+no way to say so. The only options were deleting a sale that really happened or
+leaving the books wrong.
+
+A return is recorded as what it is: a sale with negative quantities, linked to
+the invoice it came from (`invoices.returns_id`). That makes the arithmetic look
+after itself — revenue drops, sales tax drops, the thread goes back on the
+shelf as a `return` in the stock ledger, and the customer's history shows both
+halves rather than neither. Migration `db/006_returns.sql`.
+
+Everything the browser sends is a line and a quantity. Prices come off the
+original invoice and the tax is recomputed at the rate **that invoice** charged,
+not today's, so a refund can only ever be for what was actually taken.
+
+- Quantities are capped at what was bought, less anything already returned.
+- The money goes back as cash, check, card, Venmo or store credit.
+- Deleting a sale that has a return against it is refused — delete the return
+  first, or the return would be left pointing at nothing.
+- Deleting a store-credit return takes the credit back off the account, the
+  same trap the gift certificate had.
+- The document prints as a **RETURN** with positive figures and "Refunded",
+  because a customer holding the slip should not have to read minus signs.
+
+## DONE: Mom's counter feedback (2026-08-11)
+
+- **Long invoices.** Past about five lines the item just added fell below the
+  fold, so entering Calico Point's invoice meant scrolling down to fix the
+  quantity and back up to search again. New lines now go to the **top** of the
+  basket with the quantity box focused and selected: type the number, press
+  Enter, and the cursor is back in the search box for the next item.
+- **Wholesale.** The feature was built and working; nobody had ever been marked
+  as a wholesale account, so it never showed itself anywhere. Filtering the
+  customer list to "Wholesale only" now says so, and says where the switch is.
+
+---
+
 ## P1 — Sales tax sits outside the total on 1,046 imported invoices
 
 Found by a live end-to-end test on 11 August 2026.

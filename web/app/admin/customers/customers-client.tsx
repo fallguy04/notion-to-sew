@@ -138,15 +138,43 @@ export default function CustomersClient({
       </p>
 
       {shown.length === 0 ? (
-        <Empty
-          title="Nobody matches that"
-          hint="Try part of a surname, or the last four digits of a phone number."
-          action={
-            <button type="button" className="btn btn-ghost" onClick={() => setQ("")}>
-              Clear the search
-            </button>
-          }
-        />
+        // An empty list has two quite different causes, and telling someone to
+        // try another spelling when the filter is what emptied it is no help.
+        // The wholesale case is the one that actually comes up: the feature is
+        // built and working, but nobody has been marked as a wholesale account
+        // yet, so it never shows itself anywhere.
+        filter === "wholesale" && q.trim() === "" ? (
+          <Empty
+            title="No wholesale accounts yet"
+            hint="A wholesale customer is charged wholesale prices and no sales tax. Open anyone's profile and tick “Wholesale account” under Details — they'll appear here, and the till will price their sales that way from then on."
+            action={
+              <button type="button" className="btn btn-ghost" onClick={() => setFilter("all")}>
+                Show everyone
+              </button>
+            }
+          />
+        ) : (
+          <Empty
+            title="Nobody matches that"
+            hint={
+              filter === "all"
+                ? "Try part of a surname, or the last four digits of a phone number."
+                : "Nobody in this filter matches the search."
+            }
+            action={
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setQ("");
+                  setFilter("all");
+                }}
+              >
+                Clear it
+              </button>
+            }
+          />
+        )
       ) : (
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line-soft">

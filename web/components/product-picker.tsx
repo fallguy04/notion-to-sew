@@ -28,6 +28,7 @@ export default function ProductPicker({
   autoFocus = false,
   wholesale = false,
   emptyAction,
+  inputRef,
 }: {
   items: Item[];
   onPick: (item: Item) => void;
@@ -35,6 +36,8 @@ export default function ProductPicker({
   autoFocus?: boolean;
   wholesale?: boolean;
   emptyAction?: React.ReactNode;
+  /** So a caller can send the cursor back here after adding something. */
+  inputRef?: React.Ref<HTMLInputElement>;
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -106,6 +109,7 @@ export default function ProductPicker({
           <path d="m20 20-3.5-3.5" strokeLinecap="round" />
         </svg>
         <input
+          ref={inputRef}
           value={q}
           autoFocus={autoFocus}
           onChange={(e) => {

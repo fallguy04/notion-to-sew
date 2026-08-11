@@ -80,8 +80,18 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
   }
 
   const isPaid = invoice.status === "paid";
-  const title = invoice.status === "void" ? "VOID" : isPaid ? "RECEIPT" : "INVOICE";
-  right(page, title, PAGE.w - M, PAGE.h - M - 14, fonts.bold, 20, isPaid ? SPRUCE : INK);
+
+  // A return is this same document with every number the other way round. The
+  // arithmetic is stored negative, which is what makes the books add up; but
+  // someone holding the slip at the counter should read "Refunded $5.39", not
+  // a column of minus signs.
+  const isReturn = invoice.returns_id !== null;
+  const flip = (n: number) => (isReturn ? -n : n);
+
+  const title =
+    invoice.status === "void" ? "VOID" : isReturn ? "RETURN" : isPaid ? "RECEIPT" : "INVOICE";
+  right(page, title, PAGE.w - M, PAGE.h - M - 14, fonts.bold, 20,
+    isPaid && !isReturn ? SPRUCE : INK);
   right(page, `No. ${invoice.id}`, PAGE.w - M, PAGE.h - M - 32, fonts.regular, 11, SOFT);
 
   y = Math.min(y, PAGE.h - M - 46) - 20;
@@ -156,9 +166,9 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
     page.drawText(truncate(l.description, fonts.regular, 9.5, col.qty - col.desc - 34), {
       x: col.desc, y, size: 9.5, font: fonts.regular, color: INK,
     });
-    right(page, trimNum(l.qty), col.qty, y, fonts.regular, 9.5);
+    right(page, trimNum(flip(l.qty)), col.qty, y, fonts.regular, 9.5);
     right(page, unitPrice(l.unit_price), col.price, y, fonts.regular, 9.5);
-    right(page, money(l.line_total), col.total, y, fonts.regular, 9.5);
+    right(page, money(flip(l.line_total)), col.total, y, fonts.regular, 9.5);
     y -= 17;
   }
 
@@ -182,10 +192,10 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
   // invoiceMaths: shipping is a line item, and older records keep tax outside
   // the total, so a fixed layout would produce documents that don't balance.
   const { goods, shipping, taxIncluded, adjustment } = invoiceMaths(invoice, lines);
-  totalRow("Subtotal", money(goods));
+  totalRow("Subtotal", money(flip(goods)));
   if (invoice.discount > 0) totalRow("Discount", `-${money(invoice.discount)}`);
-  if (shipping > 0) totalRow("Shipping", money(shipping));
-  if (taxIncluded && invoice.tax > 0) totalRow("Sales tax", money(invoice.tax));
+  if (shipping > 0) totalRow("Shipping", money(flip(shipping)));
+  if (taxIncluded && flip(invoice.tax) > 0) totalRow("Sales tax", money(flip(invoice.tax)));
   if (invoice.credit_applied > 0) totalRow("Store credit", `-${money(invoice.credit_applied)}`);
   if (Math.abs(adjustment) >= 0.01) {
     totalRow("Adjustment", `${adjustment < 0 ? "-" : ""}${money(Math.abs(adjustment))}`);
@@ -194,10 +204,11 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
   y -= 4;
   rule(page, y + 10, 340);
   y -= 4;
-  totalRow(isPaid ? "Paid in full" : "Amount due", money(invoice.total), {
-    bold: true,
-    color: isPaid ? SPRUCE : INK,
-  });
+  totalRow(isReturn ? "Refunded" : isPaid ? "Paid in full" : "Amount due",
+    money(flip(invoice.total)), {
+      bold: true,
+      color: isPaid && !isReturn ? SPRUCE : INK,
+    });
 
   if (!taxIncluded && invoice.tax > 0) {
     y -= 8;
@@ -214,7 +225,9 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
   }
 
   // ---- footer ------------------------------------------------------------
-  const foot = isPaid
+  const foot = isReturn
+    ? `Returned against invoice no. ${invoice.returns_id}.`
+    : isPaid
     ? "Thank you for your business."
     : "Please make checks payable to " + (company.payableTo || company.name) + ". Thank you!";
   page.drawText(safe(foot), { x: M, y: M - 12, size: 9, font: fonts.regular, color: FAINT });

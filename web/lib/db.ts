@@ -80,6 +80,8 @@ export type Invoice = {
   sold_at: string;
   paid_at: string | null;
   note: string | null;
+  /** Set when this invoice is a return, pointing at the sale it came from. */
+  returns_id: number | null;
 };
 
 export type InvoiceLine = {

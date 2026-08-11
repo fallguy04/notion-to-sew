@@ -93,27 +93,44 @@ export async function deleteInvoice(id: number) {
      WHERE invoice_id = ${id} AND sku IS NOT NULL`) as { sku: string; qty: number }[];
 
   const credit = (await sql`
-    SELECT customer_id, credit_applied::float8 AS credit_applied, note
+    SELECT customer_id, credit_applied::float8 AS credit_applied, note,
+           payment::text AS payment, total::float8 AS total, returns_id
       FROM invoices WHERE id = ${id}`) as {
     customer_id: string | null;
     credit_applied: number;
     note: string | null;
+    payment: string | null;
+    total: number;
+    returns_id: number | null;
   }[];
 
   const statements = [];
   for (const l of lines) {
+    // Negative on a return, and that is the right sign: undoing a return takes
+    // the goods back off the shelf, because they were never really given back.
     const delta = Math.round(l.qty);
     if (delta === 0) continue;
     statements.push(
       sql`UPDATE products SET stock_qty = stock_qty + ${delta} WHERE sku = ${l.sku}`,
       sql`INSERT INTO stock_moves (sku, delta, reason, note)
-          VALUES (${l.sku}, ${delta}, 'adjustment', ${"returned to stock — invoice " + id + " deleted"})`,
+          VALUES (${l.sku}, ${delta}, 'adjustment',
+                  ${(delta > 0 ? "returned to stock — invoice " : "taken back off — return ") + id + " deleted"})`,
     );
   }
   const c = credit[0];
   if (c?.customer_id && c.credit_applied > 0) {
     statements.push(
       sql`UPDATE customers SET credit = credit + ${c.credit_applied} WHERE id = ${c.customer_id}`,
+    );
+  }
+
+  // A return refunded as store credit put money on the account without going
+  // through credit_applied, so it has to be taken back the same way. Clamped at
+  // zero: they may already have spent some of it.
+  if (c?.returns_id && c.payment === "credit" && c.customer_id && c.total < 0) {
+    statements.push(
+      sql`UPDATE customers SET credit = GREATEST(0, credit - ${-c.total})
+           WHERE id = ${c.customer_id}`,
     );
   }
 
@@ -437,3 +454,56 @@ export async function tidyInvoiceSequence() {
 }
 
 const round2 = (n: number) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+// ----------------------------------------------------------------- returns --
+
+export type ReturnLine = { sku: string | null; description: string; qty: number; unit_price: number };
+
+/**
+ * Money and goods going back the other way.
+ *
+ * Recorded as a sale with negative quantities, linked to the invoice it came
+ * from. Nothing special has to be taught to the reports: revenue falls, sales
+ * tax falls, stock climbs, and the customer's history shows both halves.
+ *
+ * Tax is worked out at the rate the original sale actually charged rather than
+ * today's rate — refunding 7.875% on something sold at 7.75% would hand back
+ * money that was never collected.
+ */
+export async function recordReturn(input: {
+  originalId: number;
+  customerId: string | null;
+  lines: ReturnLine[];
+  /** How the money goes back. 'credit' adds to their balance instead. */
+  refund: PaymentMethod | "credit";
+  tax: number;
+}): Promise<number> {
+  const negative = input.lines.map((l) => ({ ...l, qty: -Math.abs(l.qty) }));
+  const asPayment: PaymentMethod = input.refund === "credit" ? "credit" : input.refund;
+
+  const rows = await sql`
+    SELECT record_sale(
+      ${input.customerId},
+      ${JSON.stringify(negative)}::jsonb,
+      ${asPayment}::payment_method,
+      'paid'::invoice_status,
+      0, 0, ${-Math.abs(round2(input.tax))}, 0, false
+    ) AS id`;
+  const id = Number(rows[0].id);
+
+  const goodsBack = round2(negative.reduce((s, l) => s + l.qty * l.unit_price, 0));
+  const owed = round2(Math.abs(goodsBack) + Math.abs(round2(input.tax)));
+
+  const statements = [
+    sql`UPDATE invoices SET returns_id = ${input.originalId} WHERE id = ${id}`,
+  ];
+  // Store credit instead of cash: the invoice still records the refund, and the
+  // balance goes up by the same amount.
+  if (input.refund === "credit" && input.customerId) {
+    statements.push(
+      sql`UPDATE customers SET credit = credit + ${owed} WHERE id = ${input.customerId}`,
+    );
+  }
+  await sql.transaction(statements);
+  return id;
+}

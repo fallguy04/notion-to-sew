@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import type { CustomerLite, ProductFull, PaymentMethod } from "@/lib/db";
 import { money, pct, today } from "@/lib/format";
@@ -12,7 +12,10 @@ import CustomerPicker from "@/components/customer-picker";
 import { useToast } from "@/components/toast";
 import { recordSaleAction, posAddCustomer, type SaleResponse } from "./actions";
 
-type Line = { sku: string | null; name: string; qty: number; price: number };
+type Line = { id: number; sku: string | null; name: string; qty: number; price: number };
+
+/** Line identity, so a line keeps its own draft state when others move. */
+let nextLineId = 1;
 
 const PAYMENTS: { value: PaymentMethod; label: string; hint?: string }[] = [
   { value: "check", label: "Check" },
@@ -63,6 +66,9 @@ export default function PosClient({
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [backdating, setBackdating] = useState(false);
   const [done, setDone] = useState<SaleResponse | null>(null);
+  /** The line whose quantity should be selected — set when one is added. */
+  const [focusId, setFocusId] = useState<number | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const toast = useToast();
 
@@ -92,12 +98,28 @@ export default function PosClient({
     };
   }, [cart, discountPct, applyTax, isWholesale, rate, freight, useCredit, customer]);
 
+  /**
+   * Newest at the top, with its quantity box waiting for a number.
+   *
+   * Adding to the bottom is the obvious way round and it was wrong: past about
+   * five lines the item just added sat below the fold, so entering a long
+   * invoice meant scrolling down to fix the quantity and back up to search for
+   * the next thing. Now the search box and the line it just produced are
+   * always both on screen, however long the sale gets.
+   */
   function addItem(p: ProductFull) {
-    setCart((c) => {
-      const found = c.find((l) => l.sku === p.sku);
-      if (found) return c.map((l) => (l.sku === p.sku ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { sku: p.sku, name: p.name, qty: 1, price: priceFor(p) }];
-    });
+    const found = cart.find((l) => l.sku === p.sku);
+    if (found) {
+      setCart((c) => [
+        { ...found, qty: found.qty + 1 },
+        ...c.filter((l) => l.id !== found.id),
+      ]);
+      setFocusId(found.id);
+      return;
+    }
+    const line = { id: nextLineId++, sku: p.sku, name: p.name, qty: 1, price: priceFor(p) };
+    setCart((c) => [line, ...c]);
+    setFocusId(line.id);
   }
 
   function reset() {
@@ -226,13 +248,15 @@ export default function PosClient({
                 <ProductPicker
                   items={products}
                   autoFocus
+                  inputRef={searchRef}
                   wholesale={isWholesale}
                   onPick={(p) => addItem(products.find((x) => x.sku === p.sku)!)}
                   placeholder="Search for an item to add"
                 />
                 <p className="mt-2.5 text-[12.5px] text-ink-faint">
-                  Type to search, ↑ ↓ to move, Enter to add. Prices and quantities can be changed
-                  after they&apos;re in the basket.
+                  Type to search, ↑ ↓ to move, Enter to add. The new line goes to the top of the
+                  basket with its quantity ready — type the number and press Enter to come back
+                  here for the next item.
                 </p>
               </div>
             </Card>
@@ -259,14 +283,17 @@ export default function PosClient({
                 </p>
               ) : (
                 <ul className="divide-y divide-line-soft">
-                  {cart.map((l, i) => (
+                  {cart.map((l) => (
                     <BasketLine
-                      key={`${l.sku}-${i}`}
+                      key={l.id}
                       line={l}
+                      focus={l.id === focusId}
+                      onFocused={() => setFocusId(null)}
+                      onDone={() => searchRef.current?.focus()}
                       onChange={(next) =>
-                        setCart((c) => c.map((x, j) => (j === i ? next : x)))
+                        setCart((c) => c.map((x) => (x.id === l.id ? next : x)))
                       }
-                      onRemove={() => setCart((c) => c.filter((_, j) => j !== i))}
+                      onRemove={() => setCart((c) => c.filter((x) => x.id !== l.id))}
                     />
                   ))}
                 </ul>
@@ -539,10 +566,18 @@ export default function PosClient({
  */
 function BasketLine({
   line,
+  focus,
+  onFocused,
+  onDone,
   onChange,
   onRemove,
 }: {
   line: Line;
+  /** True for the line just added: its quantity gets the cursor. */
+  focus: boolean;
+  onFocused: () => void;
+  /** Enter in the quantity box means "done, next item". */
+  onDone: () => void;
   onChange: (next: Line) => void;
   onRemove: () => void;
 }) {
@@ -593,8 +628,24 @@ function BasketLine({
           step="1"
           value={shown("qty", trimNum(line.qty))}
           aria-label={`Quantity of ${line.name}`}
+          ref={(el) => {
+            // Straight from the search box into the number, so a quantity can
+            // be typed without reaching for the screen.
+            if (focus && el && document.activeElement !== el) {
+              el.focus();
+              el.select();
+              onFocused();
+            }
+          }}
           onFocus={(e) => e.currentTarget.select()}
           onChange={(e) => edit("qty", e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              setDraft(null);
+              onDone();
+            }
+          }}
           onBlur={() => {
             setDraft(null);
             if (!(line.qty > 0)) onRemove();

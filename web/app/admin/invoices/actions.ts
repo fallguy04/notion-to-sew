@@ -3,8 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { ok, fail, explain, type ActionResult } from "@/lib/action-result";
-import { markInvoicePaid, deleteInvoice, addFreight } from "@/lib/mutations";
-import { getInvoice, getInvoiceLines, getSettings, getCustomer } from "@/lib/queries";
+import { markInvoicePaid, deleteInvoice, addFreight, recordReturn } from "@/lib/mutations";
+import {
+  getInvoice,
+  getInvoiceLines,
+  getSettings,
+  getCustomer,
+  getReturns,
+  returnedSoFar,
+} from "@/lib/queries";
 import { buildInvoicePdf } from "@/lib/pdf";
 import { sendReceipt, mailConfigured } from "@/lib/mail";
 import { money } from "@/lib/format";
@@ -46,6 +53,17 @@ export async function deleteInvoiceAction(id: number): Promise<ActionResult> {
     await requireStaff();
     const invoice = await getInvoice(id);
     if (!invoice) return fail("That invoice no longer exists.");
+
+    // Deleting the sale out from under a return would leave the return
+    // pointing at nothing, reading as a sale of minus one thread.
+    const returns = await getReturns(id);
+    if (returns.length > 0) {
+      return fail(
+        `There's a return against this sale (#${returns.map((r) => r.id).join(", #")}). ` +
+          "Delete the return first, then this.",
+      );
+    }
+
     await deleteInvoice(id);
     touch(invoice.customer_id);
     revalidatePath("/admin/inventory");
@@ -163,3 +181,84 @@ export async function assignCustomerAction(
     return fail(explain(e));
   }
 }
+
+/**
+ * Records a return against a sale.
+ *
+ * The prices come from the original invoice, never from the browser — a refund
+ * is money leaving the till, and it should only ever be for what was actually
+ * charged. Quantities are capped at what was bought, less anything already
+ * brought back.
+ */
+export async function recordReturnAction(input: {
+  invoiceId: number;
+  lines: { lineId: number; qty: number }[];
+  refund: "cash" | "check" | "card" | "venmo" | "credit";
+}): Promise<ActionResult> {
+  try {
+    await requireStaff();
+    const original = await getInvoice(input.invoiceId);
+    if (!original) return fail("That invoice no longer exists.");
+    if (original.returns_id) return fail("That's already a return — you can't return a return.");
+
+    const [lines, already] = await Promise.all([
+      getInvoiceLines(input.invoiceId),
+      returnedSoFar(input.invoiceId),
+    ]);
+
+    const chosen: { sku: string | null; description: string; qty: number; unit_price: number }[] = [];
+    for (const want of input.lines ?? []) {
+      const line = lines.find((l) => l.id === want.lineId);
+      if (!line) continue;
+      const qty = Math.abs(Number(want.qty) || 0);
+      if (qty <= 0) continue;
+
+      const done = already.get(`${line.sku ?? ""}|${line.description}`) ?? 0;
+      const left = round2(line.qty - done);
+      if (qty > left + 0.001) {
+        return fail(
+          left <= 0
+            ? `${line.description} has already been returned in full.`
+            : `Only ${trim(left)} of ${line.description} left to return.`,
+        );
+      }
+      chosen.push({
+        sku: line.sku,
+        description: line.description,
+        qty,
+        unit_price: line.unit_price,
+      });
+    }
+
+    if (chosen.length === 0) return fail("Choose at least one thing to give back.");
+
+    // At the rate this invoice actually charged, not today's.
+    const goods = round2(chosen.reduce((s, l) => s + l.qty * l.unit_price, 0));
+    const rate = original.subtotal > 0 ? original.tax / original.subtotal : 0;
+    const tax = round2(goods * rate);
+
+    const returnId = await recordReturn({
+      originalId: input.invoiceId,
+      customerId: original.customer_id,
+      lines: chosen,
+      refund: input.refund,
+      tax,
+    });
+
+    touch(original.customer_id);
+    revalidatePath(`/admin/invoices/${input.invoiceId}`);
+    revalidatePath("/admin/inventory");
+
+    const back = money(round2(goods + tax));
+    return ok(
+      input.refund === "credit"
+        ? `Return #${returnId} recorded — ${back} added to their store credit.`
+        : `Return #${returnId} recorded — ${back} back by ${input.refund}.`,
+    );
+  } catch (e) {
+    return fail(explain(e));
+  }
+}
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+const trim = (n: number) => (Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2))));
