@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 
 /**
@@ -12,6 +12,15 @@ import { createHmac, timingSafeEqual, randomBytes } from "crypto";
  * a client could forge.
  */
 const SECRET = process.env.KIOSK_SESSION_SECRET || process.env.KIOSK_ADMIN_PIN || "";
+
+// Fail loudly at import rather than rejecting every correct PIN in silence.
+if (!process.env.KIOSK_ADMIN_PIN) {
+  console.error(
+    "[auth] KIOSK_ADMIN_PIN is not set — every PIN will be rejected. " +
+      "Note that `next start` does not always load .env.local into the runtime; " +
+      "export the vars, or set them in the Vercel dashboard.",
+  );
+}
 
 function sign(value: string) {
   return createHmac("sha256", SECRET).update(value).digest("hex");
@@ -27,10 +36,15 @@ export async function checkPin(pin: string): Promise<boolean> {
 
   const issued = `${Date.now()}.${randomBytes(8).toString("hex")}`;
   const jar = await cookies();
+  // Keyed to the actual request protocol rather than NODE_ENV. A production
+  // build served over plain http — which is what `next start` does locally —
+  // sets a Secure cookie the browser then refuses to store, so sign-in appears
+  // to succeed and every subsequent page bounces back to the kiosk.
+  const proto = (await headers()).get("x-forwarded-proto") ?? "http";
   jar.set("staff", `${issued}.${sign(issued)}`, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: proto === "https",
     path: "/",
     maxAge: 60 * 60 * 8, // a shop day
   });
