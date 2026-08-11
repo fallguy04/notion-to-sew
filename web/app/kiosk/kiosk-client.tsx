@@ -546,11 +546,12 @@ function QuantitySheet({
             max={999}
             value={qty}
             aria-label="Quantity"
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => {
               const n = parseInt(e.target.value, 10);
               setQty(Number.isFinite(n) ? Math.min(999, Math.max(1, n)) : 1);
             }}
-            className="tabular font-display h-[72px] w-[110px] rounded-2xl border border-line bg-paper text-center text-[34px] font-semibold outline-none focus:border-spruce"
+            className="no-spin tabular font-display h-[72px] w-[110px] rounded-2xl border border-line bg-paper text-center text-[34px] font-semibold outline-none focus:border-spruce"
           />
           <button
             type="button"
@@ -679,7 +680,20 @@ function Basket({
                 >
                   −
                 </button>
-                <span className="tabular w-9 text-center text-[17px] font-semibold">{l.qty}</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step="1"
+                  value={l.qty}
+                  aria-label={`Quantity of ${l.name}`}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    onQty(l.sku, Number.isFinite(v) ? v : 0);
+                  }}
+                  className="no-spin tabular h-11 w-14 rounded-xl border border-line bg-surface text-center text-[17px] font-semibold"
+                />
                 <button
                   onClick={() => onQty(l.sku, l.qty + 1)}
                   aria-label={`One more ${l.name}`}
@@ -814,7 +828,20 @@ function Checkout({
                 >
                   −
                 </button>
-                <span className="tabular w-10 text-center text-[20px] font-semibold">{l.qty}</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step="1"
+                  value={l.qty}
+                  aria-label={`Quantity of ${l.name}`}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    onQty(l.sku, Number.isFinite(v) ? v : 0);
+                  }}
+                  className="no-spin tabular h-14 w-16 rounded-xl border border-line bg-surface text-center text-[20px] font-semibold"
+                />
                 <button
                   onClick={() => onQty(l.sku, l.qty + 1)}
                   aria-label={`One more ${l.name}`}

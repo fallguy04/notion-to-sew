@@ -3,6 +3,22 @@
 export const money = (n: number | string | null | undefined) =>
   Number(n ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
+/**
+ * A price *each*, which may carry more than two decimals.
+ *
+ * Six buttons for 99c is 16.5c each. Printing that through the ordinary money
+ * formatter gives "$0.17", and a customer reading "6 x $0.17 = $0.99" would
+ * reasonably think the arithmetic was wrong. Totals stay at two decimals —
+ * only the per-unit figure is allowed a third and fourth.
+ */
+export const unitPrice = (n: number | string | null | undefined) =>
+  Number(n ?? 0).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+
 /** Signed, with losses in parentheses — the convention on a P&L. */
 export const accounting = (n: number) => (n < 0 ? `(${money(Math.abs(n))})` : money(n));
 

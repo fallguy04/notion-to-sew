@@ -366,7 +366,22 @@ body {
     .stagger > *:nth-child(n + 8) { animation-delay: 180ms; }
   }
 
-  /* Touch feedback has to be instant — a customer taps again if nothing moves. */
+    /* Number fields you're meant to type into rather than nudge. The native
+     spinners are a few pixels tall, useless on a touchscreen, and they steal
+     room from the digits. */
+  .no-spin {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  .no-spin::-webkit-outer-spin-button,
+  .no-spin::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+@layer utilities {
+/* Touch feedback has to be instant — a customer taps again if nothing moves. */
   .tap {
     transition:
       transform 90ms var(--ease-out-soft),

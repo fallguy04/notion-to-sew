@@ -1,7 +1,7 @@
 import "server-only";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { Invoice, InvoiceLine } from "./db";
-import { money, shortDate, invoiceMaths } from "./format";
+import { money, unitPrice, shortDate, invoiceMaths } from "./format";
 
 /**
  * Invoice and report PDFs.
@@ -157,7 +157,7 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
       x: col.desc, y, size: 9.5, font: fonts.regular, color: INK,
     });
     right(page, trimNum(l.qty), col.qty, y, fonts.regular, 9.5);
-    right(page, money(l.unit_price), col.price, y, fonts.regular, 9.5);
+    right(page, unitPrice(l.unit_price), col.price, y, fonts.regular, 9.5);
     right(page, money(l.line_total), col.total, y, fonts.regular, 9.5);
     y -= 17;
   }

@@ -245,92 +245,14 @@ export default function PosClient({
               ) : (
                 <ul className="divide-y divide-line-soft">
                   {cart.map((l, i) => (
-                    <li key={`${l.sku}-${i}`} className="flex items-center gap-3 px-4 py-3">
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[14.5px] font-medium">{l.name}</span>
-                        <span className="block text-[12px] text-ink-faint">{l.sku ?? "custom"}</span>
-                      </span>
-
-                      <span className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          aria-label={`One fewer ${l.name}`}
-                          onClick={() =>
-                            setCart((c) =>
-                              c
-                                .map((x, j) => (j === i ? { ...x, qty: x.qty - 1 } : x))
-                                .filter((x) => x.qty > 0),
-                            )
-                          }
-                          className="tap flex h-8 w-8 items-center justify-center rounded-lg border border-line text-[18px] leading-none"
-                        >
-                          −
-                        </button>
-                        <input
-                          type="number"
-                          value={l.qty}
-                          min={0}
-                          step="1"
-                          aria-label={`Quantity of ${l.name}`}
-                          onChange={(e) => {
-                            const v = parseFloat(e.target.value);
-                            setCart((c) =>
-                              c
-                                .map((x, j) => (j === i ? { ...x, qty: Number.isFinite(v) ? v : 0 } : x))
-                                .filter((x, j) => j !== i || x.qty > 0),
-                            );
-                          }}
-                          className="tabular h-8 w-14 rounded-lg border border-line bg-surface text-center text-[14px]"
-                        />
-                        <button
-                          type="button"
-                          aria-label={`One more ${l.name}`}
-                          onClick={() =>
-                            setCart((c) => c.map((x, j) => (j === i ? { ...x, qty: x.qty + 1 } : x)))
-                          }
-                          className="tap flex h-8 w-8 items-center justify-center rounded-lg border border-line text-[18px] leading-none"
-                        >
-                          +
-                        </button>
-                      </span>
-
-                      <span className="relative w-24 shrink-0">
-                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-faint">
-                          $
-                        </span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={l.price}
-                          aria-label={`Unit price of ${l.name}`}
-                          onChange={(e) => {
-                            const v = parseFloat(e.target.value);
-                            setCart((c) =>
-                              c.map((x, j) =>
-                                j === i ? { ...x, price: Number.isFinite(v) ? v : 0 } : x,
-                              ),
-                            );
-                          }}
-                          className="tabular h-8 w-full rounded-lg border border-line bg-surface pl-5 pr-1.5 text-right text-[14px]"
-                        />
-                      </span>
-
-                      <span className="tabular w-20 shrink-0 text-right text-[14.5px] font-semibold">
-                        {money(l.qty * l.price)}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => setCart((c) => c.filter((_, j) => j !== i))}
-                        aria-label={`Remove ${l.name}`}
-                        className="tap shrink-0 rounded-lg p-1.5 text-ink-faint hover:text-clay"
-                      >
-                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-                        </svg>
-                      </button>
-                    </li>
+                    <BasketLine
+                      key={`${l.sku}-${i}`}
+                      line={l}
+                      onChange={(next) =>
+                        setCart((c) => c.map((x, j) => (j === i ? next : x)))
+                      }
+                      onRemove={() => setCart((c) => c.filter((_, j) => j !== i))}
+                    />
                   ))}
                 </ul>
               )}
@@ -532,6 +454,150 @@ export default function PosClient({
   );
 }
 
+/**
+ * One line in the basket: quantity, price each, and what that comes to.
+ *
+ * All three can be typed into, and **the line total is one of them**. Six
+ * buttons sold together for 99c is 16.5c each, and nobody should have to work
+ * that out — type 0.99 in the last box and the unit price follows. That
+ * division is exactly what happened by hand on invoice 10230, where 0.165 got
+ * rounded to 0.17 and the line quietly came to $1.02.
+ *
+ * Whichever box has focus keeps the raw text so a half-typed "0." doesn't
+ * rewrite itself mid-keystroke; the others show the canonical figure.
+ */
+function BasketLine({
+  line,
+  onChange,
+  onRemove,
+}: {
+  line: Line;
+  onChange: (next: Line) => void;
+  onRemove: () => void;
+}) {
+  const [draft, setDraft] = useState<{ field: "qty" | "price" | "total"; text: string } | null>(
+    null,
+  );
+  const total = round2(line.qty * line.price);
+  const shown = (field: "qty" | "price" | "total", value: string) =>
+    draft?.field === field ? draft.text : value;
+
+  const edit = (field: "qty" | "price" | "total", text: string) => {
+    setDraft({ field, text });
+    const v = parseFloat(text);
+    if (!Number.isFinite(v) || v < 0) return;
+    if (field === "qty") onChange({ ...line, qty: v });
+    else if (field === "price") onChange({ ...line, price: v });
+    // The whole point: the price is what gives way, not the total.
+    else if (line.qty > 0) onChange({ ...line, price: round4(v / line.qty) });
+  };
+
+  const step = (by: number) => {
+    setDraft(null);
+    const next = Math.max(0, line.qty + by);
+    if (next === 0) onRemove();
+    else onChange({ ...line, qty: next });
+  };
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14.5px] font-medium">{line.name}</span>
+        <span className="block text-[12px] text-ink-faint">{line.sku ?? "custom"}</span>
+      </span>
+
+      <span className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label={`One fewer ${line.name}`}
+          onClick={() => step(-1)}
+          className="tap flex h-9 w-9 items-center justify-center rounded-lg border border-line text-[18px] leading-none"
+        >
+          −
+        </button>
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="1"
+          value={shown("qty", trimNum(line.qty))}
+          aria-label={`Quantity of ${line.name}`}
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => edit("qty", e.target.value)}
+          onBlur={() => {
+            setDraft(null);
+            if (!(line.qty > 0)) onRemove();
+          }}
+          className="no-spin tabular h-9 w-16 rounded-lg border border-line bg-surface text-center text-[15px]"
+        />
+        <button
+          type="button"
+          aria-label={`One more ${line.name}`}
+          onClick={() => step(1)}
+          className="tap flex h-9 w-9 items-center justify-center rounded-lg border border-line text-[18px] leading-none"
+        >
+          +
+        </button>
+      </span>
+
+      <span aria-hidden className="text-[13px] text-ink-faint">
+        ×
+      </span>
+
+      <label className="relative w-24 shrink-0">
+        <span className="sr-only">Price each for {line.name}</span>
+        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-faint">
+          $
+        </span>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          min="0"
+          value={shown("price", trimNum(line.price))}
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => edit("price", e.target.value)}
+          onBlur={() => setDraft(null)}
+          className="no-spin tabular h-9 w-full rounded-lg border border-line bg-surface pl-5 pr-1.5 text-right text-[15px]"
+        />
+      </label>
+
+      <span aria-hidden className="text-[13px] text-ink-faint">
+        =
+      </span>
+
+      <label className="relative w-24 shrink-0">
+        <span className="sr-only">Line total for {line.name}</span>
+        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-faint">
+          $
+        </span>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          min="0"
+          value={shown("total", total.toFixed(2))}
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => edit("total", e.target.value)}
+          onBlur={() => setDraft(null)}
+          className="no-spin tabular h-9 w-full rounded-lg border border-line bg-surface pl-5 pr-1.5 text-right text-[15px] font-semibold"
+        />
+      </label>
+
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${line.name}`}
+        className="tap shrink-0 rounded-lg p-1.5 text-ink-faint hover:text-clay"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+        </svg>
+      </button>
+    </li>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -686,4 +752,8 @@ function Success({
 }
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+/** Four places, because "six for 99c" is 16.5c each and the cent isn't enough. */
+const round4 = (n: number) => Math.round((n + Number.EPSILON) * 10000) / 10000;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+/** Shows 0.165 rather than 0.1650, and 6 rather than 6.00. */
+const trimNum = (n: number) => String(Number(n.toFixed(4)));

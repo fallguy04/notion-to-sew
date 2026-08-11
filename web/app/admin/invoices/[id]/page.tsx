@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getInvoice, getInvoiceLines, getSettings, getCustomer } from "@/lib/queries";
 import { mailConfigured } from "@/lib/mail";
-import { money, shortDate, dateTime, invoiceMaths } from "@/lib/format";
+import { money, unitPrice, shortDate, dateTime, invoiceMaths } from "@/lib/format";
 import { Card, StatusPill, Note } from "@/components/ui";
 import InvoiceActions from "@/components/invoice-actions";
 import FreightBox from "./freight-box";
@@ -135,7 +135,7 @@ export default async function InvoicePage({
                     <td className="whitespace-nowrap text-ink-faint">{l.sku ?? "—"}</td>
                     <td className="font-medium">{l.description}</td>
                     <td className="num">{trim(l.qty)}</td>
-                    <td className="num">{money(l.unit_price)}</td>
+                    <td className="num">{unitPrice(l.unit_price)}</td>
                     <td className="num font-medium">{money(l.line_total)}</td>
                   </tr>
                 ))
