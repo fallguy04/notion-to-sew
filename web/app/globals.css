@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #22201d;
+  --color-ink-soft: #57514a;
+  --color-ink-faint: #8a8178;
+  --color-paper: #fbf9f5;
+  --color-surface: #ffffff;
+  --color-line: #e7dfd3;
+  --color-spruce: #1f6e5a;
+  --color-spruce-dark: #17553f;
+  --color-spruce-light: #eaf2ee;
+  --color-amber: #b4761e;
+  --color-amber-light: #fbf0de;
+
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("https://fonts.gstatic.com/s/fraunces/v37/6NUh8FyLNQOQZAnv9bYEvDiIdE9Ea92uemAk_WBq8U_9v0c2Wa0K7iN7hzFUPJH58nib1603gg7S2nfgRYIcte3LM3lwzX0.woff2")
+    format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* A kiosk is a fixed appliance: no rubber-band scroll, no text selection, no
+     double-tap zoom, no long-press callout. All of those read as breakage to a
+     customer who only meant to tap a button. */
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Selection is allowed only where a human might genuinely want to copy. */
+.select-ok {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise {
+    animation: rise 260ms var(--ease-out-soft) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .pop {
+    animation: pop 200ms var(--ease-out-soft) both;
+  }
+  @keyframes pop {
+    0% {
+      transform: scale(0.96);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+}
+
+/* Touch feedback has to be instant — a customer taps again if nothing moves. */
+.tap {
+  transition:
+    transform 90ms var(--ease-out-soft),
+    background-color 140ms var(--ease-out-soft),
+    border-color 140ms var(--ease-out-soft),
+    box-shadow 140ms var(--ease-out-soft);
+}
+.tap:active {
+  transform: scale(0.975);
+}
