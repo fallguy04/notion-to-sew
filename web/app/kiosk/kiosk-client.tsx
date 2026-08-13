@@ -18,7 +18,15 @@ import {
 type Line = { sku: string; name: string; price: number; qty: number };
 type Phase = "shop" | "checkout" | "done";
 
-const IDLE_RESET_MS = 3 * 60 * 1000;
+/**
+ * Long enough to read a written shopping list.
+ *
+ * At three minutes a customer working from a handwritten list — reading it,
+ * finding the item, tapping a quantity — could be cleared out mid-order with
+ * her name and basket gone, which looks exactly like being thrown back to the
+ * start for no reason.
+ */
+const IDLE_RESET_MS = 10 * 60 * 1000;
 const DONE_RESET_MS = 90 * 1000;
 const CART_KEY = "nts.kiosk.cart.v1";
 
@@ -43,6 +51,7 @@ export default function KioskClient({
   const [picking, setPicking] = useState<Product | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const [customer, setCustomer] = useState<KioskCustomer | null>(null);
   const [useCredit, setUseCredit] = useState(true);
   const [payment, setPayment] = useState<"cash" | "check" | "venmo" | "invoice">("cash");
@@ -291,6 +300,49 @@ export default function KioskClient({
               </p>
             </div>
 
+            {/* Somewhere to say who you are, before checkout rather than only
+                at it. A customer asked to "log in" found nothing on this
+                screen but the item search, typed her name into that, and gave
+                up — the shop screen showed the buttons she'd been looking at
+                and nothing about her. Identifying yourself is the first thing
+                people try at a counter, so it belongs where they first look. */}
+            <div className="rise mt-4">
+              {customer ? (
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-5 py-3.5">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[17px] font-medium">
+                      Shopping as {customer.name}
+                    </span>
+                    <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                      {customer.is_wholesale && <span className="pill pill-quiet">Wholesale</span>}
+                      {customer.credit > 0 && (
+                        <span className="pill pill-paid">{money(customer.credit)} credit</span>
+                      )}
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => setCustomer(null)}
+                    className="tap shrink-0 rounded-xl border border-line px-4 py-2.5 text-[15px] font-medium"
+                  >
+                    Not me
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setSigningIn(true)}
+                  className="tap flex w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-line bg-surface px-5 py-3.5 text-left active:border-spruce active:bg-spruce-light"
+                >
+                  <span className="text-[17px]">
+                    <span className="font-medium">Add your name</span>
+                    <span className="ml-2 text-ink-faint">so we know whose order this is</span>
+                  </span>
+                  <span aria-hidden className="text-[19px] text-ink-faint">
+                    →
+                  </span>
+                </button>
+              )}
+            </div>
+
             {query.trim().length >= 2 ? (
               <Results results={results} query={query} cart={cart} onPick={setPicking} />
             ) : (
@@ -357,6 +409,34 @@ export default function KioskClient({
       {sheetOpen && (
         <Modal onClose={() => setSheetOpen(false)} labelledBy="basket-title">
           <div className="w-[min(92vw,520px)]">{basket}</div>
+        </Modal>
+      )}
+
+      {signingIn && (
+        <Modal onClose={() => setSigningIn(false)} labelledBy="whoami-title">
+          <div className="pop w-[min(94vw,520px)] rounded-2xl border border-line bg-surface p-6">
+            <h2 id="whoami-title" className="font-display text-[22px] font-semibold">
+              What&apos;s your name?
+            </h2>
+            <p className="mt-1.5 text-[15px] leading-relaxed text-ink-faint">
+              So the order goes on your account. If you&apos;re new, you can add yourself.
+            </p>
+            <div className="mt-4">
+              <WhoAmI
+                autoFocus
+                onPick={(c) => {
+                  setCustomer(c);
+                  setSigningIn(false);
+                }}
+              />
+            </div>
+            <button
+              onClick={() => setSigningIn(false)}
+              className="tap mt-5 h-14 w-full rounded-xl border border-line text-[16px] font-medium"
+            >
+              Not now
+            </button>
+          </div>
         </Modal>
       )}
     </div>
@@ -1017,7 +1097,15 @@ function TotalRow({ label, value }: { label: string; value: string }) {
  * catalogue is public information; 226 names, phone numbers and email addresses
  * sitting in a page anyone in the shop can view source on is not.
  */
-function WhoAmI({ onPick }: { onPick: (c: KioskCustomer) => void }) {
+function WhoAmI({
+  onPick,
+  autoFocus = false,
+}: {
+  onPick: (c: KioskCustomer) => void;
+  /** Only when the box is the reason the screen opened, so the keyboard
+      doesn't come up over the order at checkout. */
+  autoFocus?: boolean;
+}) {
   const [q, setQ] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1119,6 +1207,7 @@ function WhoAmI({ onPick }: { onPick: (c: KioskCustomer) => void }) {
     <div>
       <input
         value={q}
+        autoFocus={autoFocus}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Start typing your name"
         autoComplete="off"
