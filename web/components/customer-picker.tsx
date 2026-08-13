@@ -45,20 +45,26 @@ export default function CustomerPicker({
     return counts;
   }, [customers]);
 
+  // Names are matched a word at a time. Almost every name in the book is filed
+  // "Flory, Claudia", and someone typing "Claudia Flory" — which is the name —
+  // matched nothing at all as one run of characters. Email and phone are still
+  // matched whole; a comma never turns up in either.
   const results = useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (!needle) return [];
+    const terms = needle.split(/\s+/).filter(Boolean);
     const digits = needle.replace(/\D/g, "");
     return customers
       .filter((c) => {
-        if (c.name.toLowerCase().includes(needle)) return true;
+        const name = c.name.toLowerCase();
+        if (terms.every((t) => name.includes(t))) return true;
         if ((c.email ?? "").toLowerCase().includes(needle)) return true;
         if (digits.length >= 3 && (c.phone ?? "").replace(/\D/g, "").includes(digits)) return true;
         return false;
       })
       .sort((a, b) => {
-        const an = a.name.toLowerCase().startsWith(needle) ? 0 : 1;
-        const bn = b.name.toLowerCase().startsWith(needle) ? 0 : 1;
+        const an = a.name.toLowerCase().startsWith(terms[0]) ? 0 : 1;
+        const bn = b.name.toLowerCase().startsWith(terms[0]) ? 0 : 1;
         return an - bn || a.name.localeCompare(b.name);
       })
       .slice(0, 25);

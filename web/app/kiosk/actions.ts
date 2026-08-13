@@ -195,14 +195,27 @@ export type KioskCustomer = {
   tax_rate: number | null;
 };
 
+/**
+ * Each word has to appear somewhere in the name, rather than the whole thing
+ * appearing as one run of characters.
+ *
+ * 207 of the 227 names in the book are filed "Flory, Claudia". Claudia types
+ * "Claudia Flory", because that is her name — and a plain substring match
+ * found nobody, and then offered to add her as a second account. Matching word
+ * by word means either order works, and so does a middle name she has and the
+ * book doesn't.
+ */
 export async function kioskFindCustomers(query: string): Promise<KioskCustomer[]> {
   const q = String(query ?? "").trim();
   if (q.length < 2) return [];
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+  if (terms.length === 0) return [];
+  const patterns = terms.map((t) => `%${t}%`);
   const rows = await sql`
     SELECT id, name, is_wholesale, credit::float8 AS credit, tax_rate::float8 AS tax_rate
       FROM customers
-     WHERE name ILIKE ${"%" + q + "%"}
-     ORDER BY (lower(name) LIKE ${q.toLowerCase() + "%"}) DESC, name
+     WHERE name ILIKE ALL(${patterns}::text[])
+     ORDER BY (lower(name) LIKE ${terms[0] + "%"}) DESC, name
      LIMIT 10`;
   return rows as KioskCustomer[];
 }
