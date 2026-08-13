@@ -143,8 +143,12 @@ export default function KioskClient({
       const line: Line = existing
         ? { ...existing, qty }
         : { sku: p.sku, name: p.name, price: p.price, qty };
-      // Keep the order stable: an updated line stays where it was.
-      return existing ? c.map((l) => (l.sku === p.sku ? line : l)) : [...c, line];
+      // A new item goes to the top, where it can be seen — added to the end it
+      // lands below the fold on a long order, which is exactly the complaint
+      // the till had. Changing the quantity of something already in the basket
+      // leaves it where it is; the highlight is what says it changed, and
+      // shuffling the list under someone's finger would be worse.
+      return existing ? c.map((l) => (l.sku === p.sku ? line : l)) : [line, ...c];
     });
     setPicking(null);
     setFlash(p.sku);
@@ -223,8 +227,9 @@ export default function KioskClient({
     });
   }
 
-  const basket = (
+  const makeBasket = (inline: boolean) => (
     <Basket
+      inline={inline}
       cart={cart}
       priceFor={priceFor}
       subtotal={totals.subtotal}
@@ -237,6 +242,7 @@ export default function KioskClient({
       }}
     />
   );
+  const basket = makeBasket(false);
 
   return (
     <div className="mx-auto w-full max-w-[1180px] px-5 pb-32 pt-5 lg:pb-8">
@@ -343,10 +349,22 @@ export default function KioskClient({
               )}
             </div>
 
+            {/* Once there is something in the basket, the basket is what goes
+                here. "Popular right now" is for someone who hasn't started;
+                after that it's a wall of tiles between you and your order,
+                and on a portrait iPad — no room for the sidebar — the only
+                way to see the order at all was a bar underneath the on-screen
+                keyboard. Above 1024px the sidebar already shows it, so the
+                space there can go on being useful. */}
             {query.trim().length >= 2 ? (
               <Results results={results} query={query} cart={cart} onPick={setPicking} />
             ) : (
-              <Popular items={popular} cart={cart} onPick={setPicking} />
+              <>
+                {cart.length > 0 && <div className="mt-6 lg:hidden">{makeBasket(true)}</div>}
+                <div className={cart.length > 0 ? "hidden lg:block" : undefined}>
+                  <Popular items={popular} cart={cart} onPick={setPicking} />
+                </div>
+              </>
             )}
           </div>
 
@@ -390,9 +408,11 @@ export default function KioskClient({
         />
       )}
 
-      {/* Below 1024px the basket is a sheet you pull up, so it still shows what
-          is in it rather than only a total. */}
-      {phase === "shop" && cart.length > 0 && (
+      {/* Only while searching, when results have pushed the basket off screen.
+          The rest of the time the basket is sitting in the page above, and a
+          fixed bar would only be a second copy of it — hidden behind the iPad
+          keyboard, which is where this one was. */}
+      {phase === "shop" && cart.length > 0 && query.trim().length >= 2 && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 p-4 backdrop-blur lg:hidden">
           <button
             onClick={() => setSheetOpen(true)}
@@ -507,13 +527,23 @@ function Results({
               className="tap flex w-full items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-left active:border-spruce active:bg-spruce-light"
             >
               <span className="min-w-0 flex-1">
-                {/* Full name, never truncated — a customer can't buy what they
-                    can't read. The old kiosk cut names at 22 characters. */}
-                <span className="block text-[19px] font-medium leading-snug">{p.name}</span>
-                <span className="mt-1 flex items-center gap-2">
-                  <span className="text-[13px] text-ink-faint">{p.sku}</span>
-                  <InBasket qty={have} />
+                {/* The item number leads. Buttons live in drawers labelled by
+                    number and customers write their lists that way, so that is
+                    what people are matching against. The description still
+                    prints in full underneath, never truncated — the old kiosk
+                    cut it at 22 characters and you can't buy what you can't
+                    read. */}
+                <span className="tabular block text-[19px] font-semibold leading-snug">
+                  {p.sku}
                 </span>
+                <span className="mt-0.5 block text-[15.5px] leading-snug text-ink-soft">
+                  {p.name}
+                </span>
+                {have > 0 && (
+                  <span className="mt-1.5 block">
+                    <InBasket qty={have} />
+                  </span>
+                )}
               </span>
               <span className="tabular shrink-0 text-[20px] font-semibold">{money(p.price)}</span>
               <span className="tap flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-spruce text-[28px] font-light leading-none text-white">
@@ -552,7 +582,12 @@ function Popular({
                 className="tap flex h-full w-full flex-col justify-between gap-3 rounded-2xl border border-line bg-surface p-5 text-left active:border-spruce active:bg-spruce-light"
               >
                 <span>
-                  <span className="block text-[17px] font-medium leading-snug">{p.name}</span>
+                  <span className="tabular block text-[17px] font-semibold leading-snug">
+                    {p.sku}
+                  </span>
+                  <span className="mt-0.5 block text-[14.5px] leading-snug text-ink-soft">
+                    {p.name}
+                  </span>
                   {have > 0 && (
                     <span className="mt-1.5 block">
                       <InBasket qty={have} />
@@ -601,11 +636,12 @@ function QuantitySheet({
   return (
     <Modal onClose={onClose} labelledBy="qty-title">
       <div className="pop w-[min(92vw,460px)] rounded-3xl border border-line bg-surface p-6 shadow-[var(--shadow-float)]">
-        <h2 id="qty-title" className="font-display text-[23px] font-semibold leading-snug">
-          {product.name}
+        <h2 id="qty-title" className="tabular font-display text-[23px] font-semibold leading-snug">
+          {product.sku}
         </h2>
-        <p className="mt-1 text-[15px] text-ink-faint">
-          {product.sku} · {money(product.price)} each
+        <p className="mt-0.5 text-[16px] leading-snug text-ink-soft">{product.name}</p>
+        <p className="mt-1.5 text-[15px] text-ink-faint">
+          {money(product.price)} each
           {updating && ` · ${inBasket} already in your basket`}
         </p>
 
@@ -701,6 +737,7 @@ function Basket({
   onQty,
   onClear,
   onCheckout,
+  inline = false,
 }: {
   cart: Line[];
   priceFor: (l: Line) => number;
@@ -709,11 +746,19 @@ function Basket({
   onQty: (sku: string, qty: number) => void;
   onClear: () => void;
   onCheckout: () => void;
+  /** Sitting in the page rather than in the sidebar, so it starts further
+      down the screen and has to be shorter to keep Check out in view — with
+      an iPad keyboard up there is less room again. */
+  inline?: boolean;
 }) {
   const count = cart.reduce((s, l) => s + l.qty, 0);
 
   return (
-    <div className="flex max-h-[calc(100dvh-140px)] flex-col overflow-hidden rounded-2xl border border-line bg-surface">
+    <div
+      className={`flex flex-col overflow-hidden rounded-2xl border border-line bg-surface ${
+        inline ? "max-h-[52dvh]" : "max-h-[calc(100dvh-140px)]"
+      }`}
+    >
       <div className="flex items-baseline justify-between gap-3 border-b border-line-soft px-5 py-4">
         <h2 id="basket-title" className="font-display text-[19px] font-semibold">
           Your basket
@@ -742,7 +787,12 @@ function Basket({
             >
               <div className="flex items-start justify-between gap-3">
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[16px] font-medium leading-snug">{l.name}</span>
+                  <span className="tabular block text-[16px] font-semibold leading-snug">
+                    {l.sku}
+                  </span>
+                  <span className="mt-0.5 block text-[14px] leading-snug text-ink-soft">
+                    {l.name}
+                  </span>
                   <span className="tabular mt-0.5 block text-[13px] text-ink-faint">
                     {money(priceFor(l))} each
                   </span>
@@ -895,7 +945,12 @@ function Checkout({
               className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-4"
             >
               <span className="min-w-0 flex-1">
-                <span className="block text-[18px] font-medium leading-snug">{l.name}</span>
+                <span className="tabular block text-[18px] font-semibold leading-snug">
+                  {l.sku}
+                </span>
+                <span className="mt-0.5 block text-[15px] leading-snug text-ink-soft">
+                  {l.name}
+                </span>
                 <span className="tabular mt-0.5 block text-[14px] text-ink-faint">
                   {money(priceFor(l))} each
                 </span>
