@@ -43,6 +43,13 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${fraunces.variable}`}>
+      <head>
+        {/* Fall Studios analytics. Client-side only — it never touches the
+            database. Cookieless, skips localhost, and stores the pathname with
+            query strings stripped, so no order or customer detail leaves here.
+            data-site must match the slug in fall-studios/lib/projects.ts. */}
+        <script defer src="https://fall-studios.vercel.app/t.js" data-site="notion-to-sew" />
+      </head>
       <body>{children}</body>
     </html>
   );
