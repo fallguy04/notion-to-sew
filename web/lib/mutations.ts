@@ -507,3 +507,35 @@ export async function recordReturn(input: {
   await sql.transaction(statements);
   return id;
 }
+
+/**
+ * Cashing out a store credit balance.
+ *
+ * Cindy Bauman had $53.61 sitting on her account and asked for the money
+ * instead. Nothing in the shop recorded that: the balance is a single number
+ * on the customer row with no history behind it, so zeroing it by hand would
+ * have made $53.61 leave the till and appear nowhere at all.
+ *
+ * It is written as an expense rather than as a sale. No goods moved, so it
+ * does not belong in revenue or in cost of goods; what happened is that money
+ * left the drawer, and an expense is where money leaving the drawer lives. The
+ * two writes go together — a balance cleared without the payment recorded is
+ * the thing this is here to prevent.
+ */
+export async function payOutCredit(input: {
+  customerId: string;
+  customerName: string;
+  amount: number;
+  method: PaymentMethod;
+  spentOn: string;
+}): Promise<number> {
+  const amount = round2(input.amount);
+  const rows = (await sql.transaction([
+    sql`UPDATE customers SET credit = GREATEST(0, credit - ${amount}) WHERE id = ${input.customerId}`,
+    sql`INSERT INTO expenses (spent_on, category, amount, description)
+        VALUES (${input.spentOn}::date, 'Store credit paid out', ${amount},
+                ${`${input.customerName} — store credit cashed out by ${input.method}`})
+        RETURNING id`,
+  ])) as [unknown, { id: number }[]];
+  return Number(rows[1][0].id);
+}

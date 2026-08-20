@@ -399,7 +399,7 @@ async function ReceivableTab() {
       </div>
 
       <Card>
-        <CardHead title="Waiting to be paid" hint="Oldest first." />
+        <CardHead title="Waiting to be paid" hint="Biggest first." />
         <div className="overflow-x-auto px-2 py-3">
           <table className="tbl">
             <thead>

@@ -9,7 +9,10 @@ import {
   deleteCustomer,
   sellGiftCertificate,
   adjustCredit,
+  payOutCredit,
 } from "@/lib/mutations";
+import { getCustomer } from "@/lib/queries";
+import { today } from "@/lib/format";
 import type { PaymentMethod } from "@/lib/db";
 
 const num = (v: FormDataEntryValue | null) => {
@@ -131,6 +134,35 @@ export async function addCreditAction(
       return ok(`Added ${fmt(amount)} of credit.`);
     }
 
+    if (mode === "payout") {
+      // Money out of the drawer against a balance the customer already held.
+      const customer = await getCustomer(recipientId);
+      if (!customer) return fail("That customer no longer exists.");
+      if (customer.credit <= 0) return fail("There's no credit on this account to pay out.");
+      if (amount > customer.credit + 0.001) {
+        return fail(
+          `That's more than they have. The balance is ${fmt(customer.credit)}.`,
+        );
+      }
+      const method = (String(form.get("payment") ?? "cash") as PaymentMethod) || "cash";
+      await payOutCredit({
+        customerId: recipientId,
+        customerName: customer.name,
+        amount,
+        method,
+        spentOn: String(form.get("spent_on") || "") || today(),
+      });
+      revalidatePath(`/admin/customers/${recipientId}`);
+      revalidatePath("/admin");
+      revalidatePath("/admin/financials");
+      const left = round2(customer.credit - amount);
+      return ok(
+        left > 0
+          ? `Paid out ${fmt(amount)}. ${fmt(left)} of credit left.`
+          : `Paid out ${fmt(amount)}. Their credit is now zero, and it's on the books as an expense.`,
+      );
+    }
+
     const payment = (String(form.get("payment") ?? "cash") as PaymentMethod) || "cash";
     const invoiceId = await sellGiftCertificate({
       buyerId,
@@ -146,6 +178,8 @@ export async function addCreditAction(
     return fail(explain(e));
   }
 }
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });

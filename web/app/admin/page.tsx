@@ -125,8 +125,8 @@ export default async function Dashboard({
             <CardHead
               title="Recent sales"
               action={
-                <Link href="/admin/financials?tab=receivable" className="btn btn-ghost btn-sm">
-                  All invoices
+                <Link href="/admin/invoices" className="btn btn-ghost btn-sm">
+                  See more
                 </Link>
               }
             />

@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Customer, Invoice, CustomerLite } from "@/lib/db";
-import { money, shortDate, pct } from "@/lib/format";
+import { money, shortDate, pct, today } from "@/lib/format";
 import { Card, CardHead, Field, Note, StatusPill, Empty } from "@/components/ui";
 import { Submit, Result, Spinner } from "@/components/form";
 import InvoiceActions from "@/components/invoice-actions";
@@ -179,7 +179,7 @@ export default function ProfileClient({
                 onClick={() => setCreditOpen(true)}
                 className="btn btn-ghost mt-4 w-full"
               >
-                Add credit or sell a gift certificate
+                {customer.credit > 0 ? "Pay it out, or add credit" : "Add credit or sell a gift certificate"}
               </button>
             </div>
           </Card>
@@ -287,9 +287,10 @@ export default function ProfileClient({
 }
 
 /**
- * Two different things wear the name "add credit", so the dialog makes you say
- * which: money changed hands (a gift certificate, which is a sale and belongs
- * on the books), or it did not (a correction, which does not).
+ * Three different things wear the name "credit", so the dialog makes you say
+ * which: money came in (a gift certificate, which is a sale and belongs on the
+ * books), money went out (a balance cashed out, which is an expense), or no
+ * money moved at all (a correction, which is neither).
  */
 function CreditDialog({
   customer,
@@ -301,7 +302,9 @@ function CreditDialog({
   onClose: () => void;
 }) {
   const [result, action] = useActionState(addCreditAction, null);
-  const [mode, setMode] = useState<"sold" | "adjust">("sold");
+  const [mode, setMode] = useState<"sold" | "adjust" | "payout">(
+    customer.credit > 0 ? "payout" : "sold",
+  );
   const [buyer, setBuyer] = useState(customer.id);
 
   return (
@@ -318,22 +321,24 @@ function CreditDialog({
         <input type="hidden" name="mode" value={mode} />
 
         <div className="mt-4 flex gap-1 rounded-xl border border-line bg-paper p-1">
-          {(["sold", "adjust"] as const).map((m) => (
+          {(["sold", "payout", "adjust"] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => setMode(m)}
-              className={`tap flex-1 rounded-lg px-3 py-2 text-[13.5px] font-medium ${
+              className={`tap flex-1 rounded-lg px-2.5 py-2 text-[13px] font-medium ${
                 mode === m ? "bg-surface text-ink shadow-[var(--shadow-lift)]" : "text-ink-faint"
               }`}
             >
-              {m === "sold" ? "They paid for it" : "Correction"}
+              {m === "sold" ? "They paid in" : m === "payout" ? "I paid them" : "Correction"}
             </button>
           ))}
         </div>
         <p className="mt-2 text-[12.5px] leading-snug text-ink-faint">
           {mode === "sold"
             ? "Records a sale for the money taken and adds the same amount as credit."
+            : mode === "payout"
+            ? `Cashing out their balance. Takes it off the account and records the money leaving as an expense, so the till still adds up. They hold ${money(customer.credit)}.`
             : "Adjusts the balance only — no sale, no money taken."}
         </p>
 
@@ -344,17 +349,35 @@ function CreditDialog({
                 $
               </span>
               <input
+                key={mode}
                 name="amount"
                 type="number"
                 step="0.01"
                 min="0.01"
-                defaultValue="50.00"
+                max={mode === "payout" ? customer.credit : undefined}
+                defaultValue={mode === "payout" ? customer.credit.toFixed(2) : "50.00"}
                 required
                 autoFocus
                 className="field pl-7"
               />
             </div>
           </Field>
+
+          {mode === "payout" && (
+            <>
+              <Field label="How you paid them">
+                <select name="payment" className="field" defaultValue="cash">
+                  <option value="cash">Cash</option>
+                  <option value="check">Check</option>
+                  <option value="venmo">Venmo</option>
+                  <option value="card">Card</option>
+                </select>
+              </Field>
+              <Field label="Date" hint="When the money actually left.">
+                <input name="spent_on" type="date" defaultValue={today()} className="field" />
+              </Field>
+            </>
+          )}
 
           {mode === "sold" && (
             <>
@@ -394,7 +417,11 @@ function CreditDialog({
             {result?.ok ? "Close" : "Cancel"}
           </button>
           <Submit pendingLabel="Recording…">
-            {mode === "sold" ? "Record sale & add credit" : "Adjust balance"}
+            {mode === "sold"
+              ? "Record sale & add credit"
+              : mode === "payout"
+              ? "Record the payout"
+              : "Adjust balance"}
           </Submit>
         </div>
       </form>

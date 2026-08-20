@@ -9,6 +9,7 @@ import { Spinner } from "@/components/form";
 const ITEMS = [
   { href: "/admin", label: "Dashboard", icon: Home, exact: true },
   { href: "/admin/pos", label: "Sell", icon: Tag },
+  { href: "/admin/invoices", label: "Transactions", icon: Receipt },
   { href: "/admin/customers", label: "Customers", icon: People },
   { href: "/admin/inventory", label: "Inventory", icon: Box },
   { href: "/admin/financials", label: "Money", icon: Chart },
@@ -146,6 +147,14 @@ function Tag({ className }: IconProps) {
     <svg {...base} className={className} aria-hidden>
       <path d="M3.5 12.2V5.4a1.9 1.9 0 0 1 1.9-1.9h6.8a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.8l-6.8 6.8a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1-.5-1.5Z" />
       <circle cx="8" cy="8" r="1.4" />
+    </svg>
+  );
+}
+function Receipt({ className }: IconProps) {
+  return (
+    <svg {...base} className={className} aria-hidden>
+      <path d="M6 3.5h12v17l-2.4-1.6-2.4 1.6-2.4-1.6-2.4 1.6L6 20.5z" />
+      <path d="M9.5 8.5h5M9.5 12h5" strokeLinecap="round" />
     </svg>
   );
 }

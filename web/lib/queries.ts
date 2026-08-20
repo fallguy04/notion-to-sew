@@ -256,7 +256,9 @@ export async function getOpenInvoices() {
       FROM invoices i
       LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.status = 'pending'
-     ORDER BY i.due_date NULLS LAST, i.sold_at`;
+     -- Biggest first. Chasing money is worth doing in the order it is worth
+     -- doing: the oldest unpaid invoice is often two dollars.
+     ORDER BY i.total DESC, i.due_date NULLS LAST, i.sold_at`;
   return rows as {
     id: number;
     customer_name: string;
@@ -267,6 +269,59 @@ export async function getOpenInvoices() {
     overdue: boolean;
     days_overdue: number;
   }[];
+}
+
+/**
+ * Every invoice ever, a page at a time.
+ *
+ * The dashboard's list stops at twelve, and "All invoices" used to lead to the
+ * unpaid tab — which is not all invoices. 1,399 records is far too many to
+ * send at once and exactly the sort of history you want to go back through, so
+ * this pages, and the total comes back with the rows rather than as a second
+ * round trip.
+ *
+ * Names are matched a word at a time, so "Cindy Bauman" finds "Bauman, Cindy".
+ * An empty term list makes `ILIKE ALL` vacuously true, which is how "no search"
+ * and "search" share one query.
+ */
+export async function getInvoicePage(input: {
+  page: number;
+  perPage: number;
+  q: string;
+  status: "all" | "paid" | "pending" | "void";
+}) {
+  const q = input.q.trim();
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+  const patterns = terms.map((t) => `%${t}%`);
+  const offset = Math.max(0, (input.page - 1) * input.perPage);
+
+  const rows = await sql`
+    SELECT i.id, COALESCE(c.name, 'Guest') AS customer_name, i.customer_id,
+           i.total::float8 AS total, i.status::text AS status,
+           i.payment::text AS payment, i.sold_at, i.returns_id,
+           COUNT(*) OVER()::int AS total_rows
+      FROM invoices i
+      LEFT JOIN customers c ON c.id = i.customer_id
+     WHERE (COALESCE(c.name, 'Guest') ILIKE ALL(${patterns}::text[])
+            OR i.id::text LIKE ${q + "%"})
+       AND (${input.status} = 'all' OR i.status::text = ${input.status})
+     ORDER BY i.sold_at DESC, i.id DESC
+     LIMIT ${input.perPage} OFFSET ${offset}`;
+
+  return {
+    rows: rows as {
+      id: number;
+      customer_name: string;
+      customer_id: string | null;
+      total: number;
+      status: string;
+      payment: string | null;
+      sold_at: string;
+      returns_id: number | null;
+      total_rows: number;
+    }[],
+    total: rows.length > 0 ? Number(rows[0].total_rows) : 0,
+  };
 }
 
 // --------------------------------------------------------------- dashboard --
@@ -566,7 +621,7 @@ export const requiresCustomer = (settings: Record<string, string>) =>
   (settings.RequireCustomer ?? "true") !== "false";
 
 export const DEFAULT_EXPENSE_CATEGORIES =
-  "Inventory Purchase, Fabric, Notions, Rent, Marketing, Shipping, Wages, Other";
+  "Inventory Purchase, Fabric, Notions, Rent, Marketing, Shipping, Wages, Store credit paid out, Other";
 
 export function expenseCategories(settings: Record<string, string>): string[] {
   const raw = settings.ExpenseCategories || DEFAULT_EXPENSE_CATEGORIES;
