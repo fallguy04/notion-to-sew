@@ -3,6 +3,7 @@ import {
   getIncomeStatement,
   getExpenseBreakdown,
   getExpenses,
+  getExpensesWithoutAmount,
   getTaxSummary,
   getProductPerformance,
   getOpenInvoices,
@@ -12,13 +13,14 @@ import {
   splitExpenses,
 } from "@/lib/queries";
 import { readRange } from "@/lib/range";
-import { money, shortDate } from "@/lib/format";
+import { money, shortDate, today } from "@/lib/format";
 import { mailConfigured } from "@/lib/mail";
 import { Card, CardHead, PageHead, Stat, Empty, Note } from "@/components/ui";
 import DateRange from "@/components/date-range";
 import InvoiceActions from "@/components/invoice-actions";
 import ActionButton from "@/components/action-button";
 import ExpenseForm from "./expense-form";
+import AmountBox from "./amount-box";
 import { deleteExpenseAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -506,14 +508,48 @@ async function ReceivableTab() {
 /* ----------------------------------------------------------- expenses --- */
 
 async function ExpensesTab({ from, to }: { from: string; to: string }) {
-  const [rows, breakdown, settings] = await Promise.all([
+  const [rows, breakdown, settings, blanks] = await Promise.all([
     getExpenses(from, to),
     getExpenseBreakdown(from, to),
     getSettings(),
+    getExpensesWithoutAmount(),
   ]);
+  const showingBlanks = rows.filter((e) => e.amount === 0).length;
   const total = breakdown.reduce((s, e) => s + e.amount, 0);
 
   return (
+    <>
+      {blanks.n > 0 && (
+        <div className="mb-5">
+          <Note tone="warn">
+            <strong>
+              {blanks.n} vendor payment{blanks.n === 1 ? " has" : "s have"} no amount recorded
+            </strong>
+            {blanks.first && blanks.last && (
+              <>
+                {" "}
+                — dated {shortDate(blanks.first)} to {shortDate(blanks.last)}
+              </>
+            )}
+            . They came over from the spreadsheet, which logged who was paid and when but left
+            the amount column empty, so the figures exist only on a cheque stub or a bank
+            statement. Type one in beside the row and it joins the books.
+            {showingBlanks < blanks.n && (
+              <>
+                {" "}
+                <Link
+                  href={`/admin/financials?tab=expenses&from=${blanks.first}&to=${today()}`}
+                  className="font-medium underline"
+                >
+                  Show all of them
+                </Link>
+                .
+              </>
+            )}
+          </Note>
+        </div>
+      )}
+
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
       <div className="order-2 lg:order-1">
         <Card>
@@ -552,7 +588,9 @@ async function ExpensesTab({ from, to }: { from: string; to: string }) {
                       <td className="max-w-[280px] truncate text-ink-soft">
                         {e.description ?? "—"}
                       </td>
-                      <td className="num font-medium">{money(e.amount)}</td>
+                      <td className="num font-medium">
+                        {e.amount === 0 ? <AmountBox id={e.id} /> : money(e.amount)}
+                      </td>
                       <td className="num">
                         <ActionButton
                           action={deleteExpenseAction.bind(null, e.id)}
@@ -605,6 +643,7 @@ async function ExpensesTab({ from, to }: { from: string; to: string }) {
         )}
       </div>
     </div>
+    </>
   );
 }
 

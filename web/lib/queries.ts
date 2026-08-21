@@ -489,6 +489,22 @@ export async function getExpenseBreakdown(start: string, end: string) {
   return rows as { category: string; amount: number; n: number }[];
 }
 
+/**
+ * The imported vendor payments that never got an amount.
+ *
+ * Counted across all time, not the chosen range: they run from February 2023
+ * and the Money screen opens on this year, so a banner scoped to the range
+ * would say nothing about the thirty-odd sitting behind it.
+ */
+export async function getExpensesWithoutAmount() {
+  const rows = await sql`
+    SELECT COUNT(*)::int AS n,
+           MIN(spent_on)::text AS first,
+           MAX(spent_on)::text AS last
+      FROM expenses WHERE amount = 0`;
+  return rows[0] as { n: number; first: string | null; last: string | null };
+}
+
 export async function getExpenses(start: string, end: string, limit = 200): Promise<Expense[]> {
   const rows = await sql`
     SELECT id, to_char(spent_on, 'YYYY-MM-DD') AS spent_on, category,

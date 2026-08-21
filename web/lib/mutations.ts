@@ -539,3 +539,22 @@ export async function payOutCredit(input: {
   ])) as [unknown, { id: number }[]];
   return Number(rows[1][0].id);
 }
+
+/**
+ * Puts an amount on an expense that has none.
+ *
+ * 34 vendor payments came over from the spreadsheet with a date and a supplier
+ * but a blank amount column — the old app logged who was paid and never how
+ * much. Nothing in the data can recover those figures; they have to be typed in
+ * from a cheque book or a bank statement, so there has to be somewhere to type
+ * them. Deliberately only fills a blank: correcting a figure that is already
+ * recorded is a different act, and rewriting settled history by accident is
+ * what this refuses to allow.
+ */
+export async function setExpenseAmount(id: number, amount: number) {
+  const rows = await sql`
+    UPDATE expenses SET amount = ${round2(amount)}
+     WHERE id = ${id} AND amount = 0
+     RETURNING id`;
+  return rows.length > 0;
+}
