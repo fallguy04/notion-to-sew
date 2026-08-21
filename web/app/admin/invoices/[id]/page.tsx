@@ -15,6 +15,7 @@ import { Card, StatusPill, Note } from "@/components/ui";
 import InvoiceActions from "@/components/invoice-actions";
 import FreightBox from "./freight-box";
 import AssignCustomer from "./assign-customer";
+import BackLink from "../../nav-history";
 import ReturnItems from "./return-items";
 
 export const dynamic = "force-dynamic";
@@ -58,12 +59,10 @@ export default async function InvoicePage({
   return (
     <>
       <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href={customer ? `/admin/customers/${customer.id}` : "/admin"}
-          className="tap -ml-1 inline-flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-[13.5px] font-medium text-ink-faint hover:text-ink"
-        >
-          <span aria-hidden>←</span> {customer ? customer.name : "Dashboard"}
-        </Link>
+        <BackLink
+          fallbackHref={customer ? `/admin/customers/${customer.id}` : "/admin/invoices"}
+          fallbackLabel={customer ? customer.name : "Transactions"}
+        />
         <div className="flex flex-wrap items-center gap-1">
           {!isReturn && lines.length > 0 && (
             <ReturnItems

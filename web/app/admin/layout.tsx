@@ -1,7 +1,10 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { isStaff } from "@/lib/auth";
 import { ToastHost } from "@/components/toast";
 import Nav from "./nav";
+import { NavHistory } from "./nav-history";
+import Palette from "./palette";
 
 /**
  * The gate for everything under /admin.
@@ -18,6 +21,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <ToastHost>
+      {/* Records the trail so "back" can mean the page you came from. */}
+      <Suspense fallback={null}>
+        <NavHistory />
+      </Suspense>
+      <Palette />
       <div className="flex min-h-dvh flex-col lg:flex-row">
         <Nav />
         <main className="min-w-0 flex-1 px-5 pb-24 pt-6 lg:px-10 lg:pt-9">

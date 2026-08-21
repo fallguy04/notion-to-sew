@@ -9,6 +9,7 @@ import { Card, CardHead, Field, Note, StatusPill, Empty } from "@/components/ui"
 import { Submit, Result, Spinner } from "@/components/form";
 import InvoiceActions from "@/components/invoice-actions";
 import Modal from "@/components/modal";
+import BackLink from "../../nav-history";
 import { useToast } from "@/components/toast";
 import { saveCustomerAction, addCreditAction, deleteCustomerAction } from "../actions";
 import { useTransition } from "react";
@@ -39,12 +40,7 @@ export default function ProfileClient({
   return (
     <>
       <div className="mb-6">
-        <Link
-          href="/admin/customers"
-          className="tap -ml-1 inline-flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-[13.5px] font-medium text-ink-faint hover:text-ink"
-        >
-          <span aria-hidden>←</span> All customers
-        </Link>
+        <BackLink fallbackHref="/admin/customers" fallbackLabel="All customers" />
 
         <div className="mt-2.5 flex flex-wrap items-end justify-between gap-4">
           <div>

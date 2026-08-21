@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useTransition } from "react";
 import { signOut } from "../actions";
 import { Spinner } from "@/components/form";
+import { PaletteButton } from "./palette";
 
 const ITEMS = [
   { href: "/admin", label: "Dashboard", icon: Home, exact: true },
@@ -35,6 +36,10 @@ export default function Nav() {
             Back office
           </div>
         </Link>
+
+        <div className="mb-4">
+          <PaletteButton />
+        </div>
 
         <nav className="flex flex-col gap-0.5">
           {ITEMS.map(({ href, label, icon: Icon, exact }) => {
@@ -86,9 +91,16 @@ export default function Nav() {
       {/* Narrow screens: the same destinations, scrollable, stuck to the top. */}
       <div className="no-print sticky top-0 z-40 border-b border-line bg-paper/92 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between px-4 pt-3">
-          <Link href="/admin" className="font-display text-[17px] font-semibold tracking-tight">
+          <Link
+            href="/admin"
+            className="min-w-0 shrink truncate font-display text-[17px] font-semibold tracking-tight"
+          >
             Notion&nbsp;to&nbsp;<span className="text-spruce">Sew</span>
           </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="w-[104px] sm:w-44">
+              <PaletteButton />
+            </div>
           <button
             type="button"
             onClick={() => start(async () => void (await signOut()))}
@@ -97,6 +109,7 @@ export default function Nav() {
             {pending ? <Spinner /> : null}
             Sign out
           </button>
+          </div>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {ITEMS.map(({ href, label, icon: Icon, exact }) => {
