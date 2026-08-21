@@ -6,6 +6,7 @@ import { useTransition } from "react";
 import { signOut } from "../actions";
 import { Spinner } from "@/components/form";
 import { PaletteButton } from "./palette";
+import { forgetCachedPages } from "./pwa";
 
 const ITEMS = [
   { href: "/admin", label: "Dashboard", icon: Home, exact: true },
@@ -79,7 +80,13 @@ export default function Nav() {
           </Link>
           <button
             type="button"
-            onClick={() => start(async () => void (await signOut()))}
+            onClick={() =>
+              start(async () => {
+                // The cached pages are the customer book and the takings.
+                await forgetCachedPages();
+                await signOut();
+              })
+            }
             className="tap flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[13.5px] font-medium text-ink-faint hover:bg-black/[0.035] hover:text-ink"
           >
             {pending ? <Spinner /> : <Exit className="h-[17px] w-[17px]" />}
@@ -103,7 +110,13 @@ export default function Nav() {
             </div>
           <button
             type="button"
-            onClick={() => start(async () => void (await signOut()))}
+            onClick={() =>
+              start(async () => {
+                // The cached pages are the customer book and the takings.
+                await forgetCachedPages();
+                await signOut();
+              })
+            }
             className="btn btn-quiet btn-sm"
           >
             {pending ? <Spinner /> : null}

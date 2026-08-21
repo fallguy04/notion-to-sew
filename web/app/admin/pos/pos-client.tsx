@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
+import { useOnline } from "@/components/hydrated";
 import Link from "next/link";
 import type { CustomerLite, ProductFull, PaymentMethod } from "@/lib/db";
 import { money, pct, today } from "@/lib/format";
@@ -69,6 +70,7 @@ export default function PosClient({
   /** The line whose quantity should be selected — set when one is added. */
   const [focusId, setFocusId] = useState<number | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const online = useOnline();
   const [pending, start] = useTransition();
   const toast = useToast();
 
@@ -514,14 +516,20 @@ export default function PosClient({
                   )}
                 </div>
 
+                {/* Money is the one thing that must not be attempted on a
+                    dead connection. Everything else here can fail with a
+                    message and be tried again; a sale half-written is stock
+                    that moved and an invoice number that did not. */}
                 <button
                   type="button"
-                  disabled={pending || cart.length === 0}
+                  disabled={pending || cart.length === 0 || !online}
                   onClick={submit}
                   className="btn btn-primary btn-lg mt-4 w-full"
                 >
                   {pending && <Spinner />}
-                  {pending
+                  {!online
+                    ? "No connection — write it down"
+                    : pending
                     ? "Recording…"
                     : payment === "invoice"
                       ? `Create invoice · ${money(totals.total)}`

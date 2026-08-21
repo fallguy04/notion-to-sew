@@ -27,6 +27,10 @@ export const metadata: Metadata = {
   // what makes it feel like an appliance rather than a web page someone can
   // navigate away from.
   appleWebApp: { capable: true, title: "Notion to Sew", statusBarStyle: "default" },
+  icons: {
+    icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   formatDetection: { telephone: false, address: false, email: false },
 };
 
@@ -34,9 +38,10 @@ export const viewport: Viewport = {
   themeColor: "#FBF9F5",
   width: "device-width",
   initialScale: 1,
-  // A customer pinching the catalogue out of alignment is a support call.
-  maximumScale: 1,
-  userScalable: false,
+  // Zoom stays available here. It is switched off for the kiosk only, in that
+  // segment's own viewport: a customer pinching the catalogue out of alignment
+  // is a support call, but the back office on a phone is small type someone
+  // reads in poor light, and taking pinch-to-zoom away from it is unkind.
   viewportFit: "cover",
 };
 
