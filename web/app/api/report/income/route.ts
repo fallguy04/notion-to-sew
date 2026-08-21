@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { isStaff } from "@/lib/auth";
-import { getIncomeStatement, getExpenseBreakdown, getSettings } from "@/lib/queries";
+import {
+  getIncomeStatement,
+  getExpenseBreakdown,
+  getSettings,
+  stockCategories,
+  splitExpenses,
+} from "@/lib/queries";
 import { buildIncomeStatementPdf } from "@/lib/pdf";
 import { readRange } from "@/lib/range";
 
@@ -23,8 +29,11 @@ export async function GET(request: Request) {
     getSettings(),
   ]);
 
+  const { operating, purchases, totalOperating, totalPurchases } = splitExpenses(
+    expenses,
+    stockCategories(settings),
+  );
   const totalIncome = income.retail + income.wholesale;
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
   const grossProfit = totalIncome - income.cogs;
 
   const notes: string[] = [];
@@ -46,6 +55,11 @@ export async function GET(request: Request) {
       `${income.invoices_without_lines} invoice${income.invoices_without_lines === 1 ? "" : "s"} have no line items recorded and contribute nothing to cost of goods sold.`,
     );
   }
+  if (totalPurchases > 0) {
+    notes.push(
+      `Stock bought (${fmt(totalPurchases)}) is listed but not subtracted; it reaches profit through cost of goods as it sells.`,
+    );
+  }
   notes.push("Sales tax collected is excluded from revenue; it is money held for the state.");
 
   const pdf = await buildIncomeStatementPdf({
@@ -59,9 +73,11 @@ export async function GET(request: Request) {
     totalIncome,
     cogs: income.cogs,
     grossProfit,
-    expenses: expenses.map((e) => ({ category: e.category, amount: e.amount })),
-    totalExpenses,
-    netProfit: grossProfit - totalExpenses,
+    expenses: operating.map((e) => ({ category: e.category, amount: e.amount })),
+    totalExpenses: totalOperating,
+    purchases: purchases.map((e) => ({ category: e.category, amount: e.amount })),
+    totalPurchases,
+    netProfit: grossProfit - totalOperating,
     notes,
   });
 

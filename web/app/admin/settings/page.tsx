@@ -8,6 +8,7 @@ import {
   getEmailCounts,
   getReplies,
   expenseCategories,
+  stockCategories,
   requiresCustomer,
   payableTo,
   type EmailLogRow,
@@ -50,6 +51,7 @@ export default async function SettingsPage() {
         settings={settings}
         ratePct={(rate * 100).toFixed(3).replace(/\.?0+$/, "")}
         categories={expenseCategories(settings).join(", ")}
+        stock={stockCategories(settings).join(", ")}
         requireCustomer={requiresCustomer(settings)}
         payableTo={payableTo(settings)}
       />

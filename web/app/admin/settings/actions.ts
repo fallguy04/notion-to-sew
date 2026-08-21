@@ -34,6 +34,14 @@ export async function saveSettingsAction(
       return fail("Keep at least one expense category.");
     }
 
+    // Free text rather than a subset check: a category can be retired from the
+    // list above while old expenses still carry it, and those old rows must
+    // keep landing on the right side of the profit line.
+    const stock = String(form.get("stock_categories") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     await updateSettings({
       CompanyName: name,
       PayableTo: payable,
@@ -41,6 +49,7 @@ export async function saveSettingsAction(
       TaxRate: String(ratePct / 100),
       VenmoUser: String(form.get("venmo_user") ?? "").trim().replace(/^@/, ""),
       ExpenseCategories: categories.join(", "),
+      StockCategories: stock.join(", "),
       RequireCustomer: form.get("require_customer") === "on" ? "true" : "false",
     });
 

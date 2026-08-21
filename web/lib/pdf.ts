@@ -248,6 +248,9 @@ export type IncomeStatementInput = {
   grossProfit: number;
   expenses: { category: string; amount: number }[];
   totalExpenses: number;
+  /** Stock bought in the period — listed, but not subtracted. */
+  purchases: { category: string; amount: number }[];
+  totalPurchases: number;
   netProfit: number;
   notes: string[];
 };
@@ -310,7 +313,7 @@ export async function buildIncomeStatementPdf(d: IncomeStatementInput): Promise<
   } else {
     for (const e of d.expenses) row(e.category, e.amount, { indent: true });
   }
-  row("Total expenses", d.totalExpenses, { bold: true, ruleAbove: true });
+  row("Total operating expenses", d.totalExpenses, { bold: true, ruleAbove: true });
   y -= 16;
 
   rule(page, y + 12, M, PAGE.w - M, INK);
@@ -322,6 +325,16 @@ export async function buildIncomeStatementPdf(d: IncomeStatementInput): Promise<
     d.netProfit < 0 ? rgb(0.65, 0.23, 0.2) : SPRUCE,
   );
   y -= 34;
+
+  // Below the profit line on purpose: the money did leave the bank, but buying
+  // stock is not a cost of trading until the stock sells, and cost of goods
+  // sold above already counts it then.
+  if (d.totalPurchases > 0) {
+    section("STOCK BOUGHT IN THIS PERIOD - NOT SUBTRACTED ABOVE");
+    for (const e of d.purchases) row(e.category, e.amount, { indent: true });
+    row("Total stock bought", d.totalPurchases, { bold: true, ruleAbove: true });
+    y -= 16;
+  }
 
   if (d.notes.length) {
     rule(page, y);

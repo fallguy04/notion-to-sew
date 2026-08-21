@@ -8,6 +8,8 @@ import {
   getOpenInvoices,
   getSettings,
   expenseCategories,
+  stockCategories,
+  splitExpenses,
 } from "@/lib/queries";
 import { readRange } from "@/lib/range";
 import { money, shortDate } from "@/lib/format";
@@ -85,15 +87,23 @@ export default async function FinancialsPage({
 /* ------------------------------------------------------------- profit --- */
 
 async function ProfitTab({ from, to }: { from: string; to: string }) {
-  const [income, expenses] = await Promise.all([
+  const [income, expenses, settings] = await Promise.all([
     getIncomeStatement(from, to),
     getExpenseBreakdown(from, to),
+    getSettings(),
   ]);
 
+  // Stock bought is not an expense of trading; it is money turned into goods.
+  // It reaches the profit line as those goods sell, through cost of goods sold.
+  // Counting the purchase here as well would count the same money twice.
+  const { operating, purchases, totalOperating, totalPurchases } = splitExpenses(
+    expenses,
+    stockCategories(settings),
+  );
+
   const totalIncome = income.retail + income.wholesale;
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
   const grossProfit = totalIncome - income.cogs;
-  const netProfit = grossProfit - totalExpenses;
+  const netProfit = grossProfit - totalOperating;
   const margin = totalIncome > 0 ? (grossProfit / totalIncome) * 100 : 0;
 
   return (
@@ -101,7 +111,15 @@ async function ProfitTab({ from, to }: { from: string; to: string }) {
       <div className="stagger mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Revenue" value={money(totalIncome)} hint={`${income.orders} invoices`} />
         <Stat label="Cost of goods" value={money(income.cogs)} hint={`${margin.toFixed(0)}% gross margin`} />
-        <Stat label="Expenses" value={money(totalExpenses)} />
+        <Stat
+          label="Running costs"
+          value={money(totalOperating)}
+          hint={
+            totalPurchases > 0
+              ? `${money(totalPurchases)} of stock bought, counted as it sells`
+              : undefined
+          }
+        />
         <Stat
           label="Net profit"
           value={money(netProfit)}
@@ -175,14 +193,14 @@ async function ProfitTab({ from, to }: { from: string; to: string }) {
 
           <div className="h-5" />
           <Section title="Operating expenses" />
-          {expenses.length === 0 ? (
+          {operating.length === 0 ? (
             <Line label="Nothing recorded in this period" value={0} indent />
           ) : (
-            expenses.map((e) => (
+            operating.map((e) => (
               <Line key={e.category} label={e.category} value={e.amount} indent />
             ))
           )}
-          <Line label="Total expenses" value={totalExpenses} bold rule />
+          <Line label="Total operating expenses" value={totalOperating} bold rule />
 
           <div className="mt-6 flex items-baseline justify-between border-t border-ink/15 pt-4">
             <span className="font-display text-[17px] font-semibold">Net profit</span>
@@ -205,6 +223,28 @@ async function ProfitTab({ from, to }: { from: string; to: string }) {
               </p>
             )}
           </div>
+
+          {/* Shown, not hidden. The money really did leave the bank this
+              period; it just isn't a cost of trading until the goods sell. */}
+          {totalPurchases > 0 && (
+            <div className="mt-7 rounded-xl border border-line-soft bg-paper/60 px-4 py-4">
+              <div className="label">Stock bought in this period</div>
+              {purchases.map((e) => (
+                <Line key={e.category} label={e.category} value={e.amount} indent />
+              ))}
+              <Line label="Total stock bought" value={totalPurchases} bold rule />
+              <p className="mt-3 text-[12.5px] leading-relaxed text-ink-faint">
+                Not subtracted above. Buying stock turns money into goods on the shelf rather
+                than spending it, so it reaches the profit line through cost of goods sold as
+                each item sells — subtracting the purchase as well would count the same money
+                twice. Which categories count as stock is set under{" "}
+                <Link href="/admin/settings" className="font-medium underline">
+                  Settings
+                </Link>
+                .
+              </p>
+            </div>
+          )}
         </div>
       </Card>
     </>

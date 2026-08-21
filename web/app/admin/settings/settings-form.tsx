@@ -9,12 +9,14 @@ export default function SettingsForm({
   settings,
   ratePct,
   categories,
+  stock,
   requireCustomer,
   payableTo,
 }: {
   settings: Record<string, string>;
   ratePct: string;
   categories: string;
+  stock: string;
   requireCustomer: boolean;
   payableTo: string;
 }) {
@@ -124,6 +126,29 @@ export default function SettingsForm({
               className="field"
               aria-label="Expense categories"
             />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHead
+            title="Which of those buy stock"
+            hint="Separated by commas, and they should match names from the list above."
+          />
+          <div className="px-5 py-5">
+            <textarea
+              name="stock_categories"
+              defaultValue={stock}
+              rows={2}
+              className="field"
+              aria-label="Stock purchase categories"
+            />
+            <p className="mt-2.5 text-[12.5px] leading-relaxed text-ink-faint">
+              Money spent on these turns into goods on the shelf rather than being spent, so
+              profit and loss lists it separately instead of subtracting it. It reaches the
+              profit line through cost of goods sold as each item sells — counting the purchase
+              as well would count the same money twice. Everything else is a running cost and
+              comes off profit straight away.
+            </p>
           </div>
         </Card>
       </div>

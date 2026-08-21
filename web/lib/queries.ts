@@ -631,6 +631,47 @@ export function expenseCategories(settings: Record<string, string>): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The expense categories that buy stock rather than run the shop.
+ *
+ * Buying a bolt of interfacing is not a cost of trading — it is turning money
+ * into goods on a shelf. It becomes a cost when it sells, and cost of goods
+ * sold already counts it then, from the unit cost on the item. Subtracting the
+ * purchase as well counts the same money twice and makes the shop look far
+ * less profitable than it is.
+ */
+export const DEFAULT_STOCK_CATEGORIES =
+  "Inventory Purchase, Notions, Fabric, Vendor Payment";
+
+export function stockCategories(settings: Record<string, string>): string[] {
+  const raw = settings.StockCategories ?? DEFAULT_STOCK_CATEGORIES;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export type ExpenseRow = { category: string; amount: number };
+
+/**
+ * Splits a period's expenses into the two that behave differently on a profit
+ * and loss. One function, used by the screen and by the printed report, so the
+ * two cannot come to different answers.
+ */
+export function splitExpenses(rows: ExpenseRow[], stock: string[]) {
+  const isStock = new Set(stock.map((c) => c.trim().toLowerCase()));
+  const purchases = rows.filter((r) => isStock.has(r.category.trim().toLowerCase()));
+  const operating = rows.filter((r) => !isStock.has(r.category.trim().toLowerCase()));
+  const sum = (xs: ExpenseRow[]) =>
+    Math.round(xs.reduce((t, x) => t + x.amount, 0) * 100) / 100;
+  return {
+    operating,
+    purchases,
+    totalOperating: sum(operating),
+    totalPurchases: sum(purchases),
+  };
+}
+
 // -------------------------------------------------------------- integrity --
 
 /**
