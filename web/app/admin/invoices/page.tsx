@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getInvoicePage } from "@/lib/queries";
 import { money, dateTime } from "@/lib/format";
 import { Card, PageHead, StatusPill, Empty } from "@/components/ui";
+import { Rows, RowLink } from "@/components/rows";
 
 export const dynamic = "force-dynamic";
 
@@ -70,8 +71,8 @@ export default async function InvoicesPage({
 
       {/* A plain GET form, so a search survives a refresh and can be linked to
           or bookmarked. Paging back and forth keeps whatever is typed here. */}
-      <form method="get" className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1">
+      <form method="get" className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative sm:min-w-[220px] sm:flex-1">
           <svg
             aria-hidden
             viewBox="0 0 24 24"
@@ -92,21 +93,28 @@ export default async function InvoicesPage({
             className="field pl-10"
           />
         </div>
-        <select name="status" defaultValue={status} className="field w-auto" aria-label="Show">
-          {FILTERS.map((f) => (
-            <option key={f.key} value={f.key}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-        <button type="submit" className="btn btn-ghost">
-          Search
-        </button>
-        {(q || status !== "all") && (
-          <Link href="/admin/invoices" className="btn btn-quiet btn-sm text-ink-faint">
-            Clear
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          <select
+            name="status"
+            defaultValue={status}
+            className="field flex-1 sm:w-auto sm:flex-none"
+            aria-label="Show"
+          >
+            {FILTERS.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="btn btn-ghost">
+            Search
+          </button>
+          {(q || status !== "all") && (
+            <Link href="/admin/invoices" className="btn btn-quiet btn-sm text-ink-faint">
+              Clear
+            </Link>
+          )}
+        </div>
       </form>
 
       {rows.length === 0 ? (
@@ -121,7 +129,27 @@ export default async function InvoicesPage({
         />
       ) : (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto px-2 py-3">
+          <div className="sm:hidden">
+            <Rows>
+              {rows.map((r) => (
+                <RowLink
+                  key={r.id}
+                  href={`/admin/invoices/${r.id}`}
+                  title={r.customer_name}
+                  sub={`#${r.id} · ${dateTime(r.sold_at)}${r.payment ? ` · ${cap(r.payment)}` : ""}`}
+                  right={money(r.total)}
+                  rightSub={
+                    r.returns_id ? (
+                      <span className="pill pill-quiet">Return</span>
+                    ) : (
+                      <StatusPill status={r.status} />
+                    )
+                  }
+                />
+              ))}
+            </Rows>
+          </div>
+          <div className="hidden overflow-x-auto px-2 py-3 sm:block">
             <table className="tbl">
               <thead>
                 <tr>

@@ -429,3 +429,30 @@ body {
     background: #fff;
   }
 }
+
+/* ------------------------------------------------------------- touch ----- */
+/* Unlayered on purpose, so these beat the size utilities in the markup.
+   iOS zooms the whole page into any focused input whose text is under 16px —
+   and leaves it zoomed — so on touch screens every ordinary input reads at
+   16px even where the design says 15. The kiosk's big search box is already
+   past the threshold and keeps its own size. */
+@media (pointer: coarse) {
+  .field,
+  input.no-spin {
+    font-size: 16px;
+  }
+  .field-lg {
+    font-size: 17px;
+  }
+}
+
+/* Double-tap-to-zoom makes every tap wait to see if a second one is coming.
+   Nothing here zooms by double-tap on purpose. */
+a,
+button,
+input,
+select,
+textarea,
+label {
+  touch-action: manipulation;
+}

@@ -95,55 +95,20 @@ export default function Nav() {
         </div>
       </aside>
 
-      {/* Narrow screens: the same destinations, scrollable, stuck to the top. */}
+      {/* Narrow screens: a slim top bar — the destinations live in the
+          bottom tab bar now, where thumbs actually are. */}
       <div className="no-print sticky top-0 z-40 border-b border-line bg-paper/92 backdrop-blur lg:hidden">
-        <div className="flex items-center justify-between px-4 pt-3">
+        <div className="flex items-center gap-3 px-4 py-2.5">
           <Link
             href="/admin"
-            className="min-w-0 shrink truncate font-display text-[17px] font-semibold tracking-tight"
+            className="shrink-0 font-display text-[17px] font-semibold tracking-tight"
           >
             Notion&nbsp;to&nbsp;<span className="text-spruce">Sew</span>
           </Link>
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="w-[104px] sm:w-44">
-              <PaletteButton />
-            </div>
-          <button
-            type="button"
-            onClick={() =>
-              start(async () => {
-                // The cached pages are the customer book and the takings.
-                await forgetCachedPages();
-                await signOut();
-              })
-            }
-            className="btn btn-quiet btn-sm"
-          >
-            {pending ? <Spinner /> : null}
-            Sign out
-          </button>
+          <div className="min-w-0 flex-1">
+            <PaletteButton />
           </div>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {ITEMS.map(({ href, label, icon: Icon, exact }) => {
-            const active = isActive(href, exact);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={`tap flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13.5px] font-medium ${
-                  active
-                    ? "border-spruce/30 bg-spruce-light text-spruce-dark"
-                    : "border-line bg-surface text-ink-soft"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
       </div>
     </>
   );
@@ -161,14 +126,14 @@ const base = {
   strokeLinejoin: "round" as const,
 };
 
-function Home({ className }: IconProps) {
+export function Home({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z" />
     </svg>
   );
 }
-function Tag({ className }: IconProps) {
+export function Tag({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <path d="M3.5 12.2V5.4a1.9 1.9 0 0 1 1.9-1.9h6.8a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.8l-6.8 6.8a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1-.5-1.5Z" />
@@ -176,7 +141,7 @@ function Tag({ className }: IconProps) {
     </svg>
   );
 }
-function Receipt({ className }: IconProps) {
+export function Receipt({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <path d="M6 3.5h12v17l-2.4-1.6-2.4 1.6-2.4-1.6-2.4 1.6L6 20.5z" />
@@ -184,7 +149,7 @@ function Receipt({ className }: IconProps) {
     </svg>
   );
 }
-function People({ className }: IconProps) {
+export function People({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <circle cx="9" cy="8" r="3.2" />
@@ -193,7 +158,7 @@ function People({ className }: IconProps) {
     </svg>
   );
 }
-function Box({ className }: IconProps) {
+export function Box({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <path d="M3.5 7.6 12 3.5l8.5 4.1v8.8L12 20.5 3.5 16.4Z" />
@@ -201,7 +166,7 @@ function Box({ className }: IconProps) {
     </svg>
   );
 }
-function Chart({ className }: IconProps) {
+export function Chart({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <path d="M4 20V4M4 20h16" />
@@ -209,7 +174,7 @@ function Chart({ className }: IconProps) {
     </svg>
   );
 }
-function Gear({ className }: IconProps) {
+export function Gear({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <circle cx="12" cy="12" r="3" />
@@ -217,7 +182,7 @@ function Gear({ className }: IconProps) {
     </svg>
   );
 }
-function Screen({ className }: IconProps) {
+export function Screen({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <rect x="3" y="4" width="18" height="13" rx="2" />
@@ -225,7 +190,7 @@ function Screen({ className }: IconProps) {
     </svg>
   );
 }
-function Exit({ className }: IconProps) {
+export function Exit({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
       <path d="M15 4.5h3a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5h-3" />

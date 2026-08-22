@@ -10,6 +10,7 @@ import {
 import { readRange, previousRange } from "@/lib/range";
 import { money, dateTime, shortDate, daysBetween } from "@/lib/format";
 import { Card, CardHead, PageHead, Stat, StatusPill, Empty, Note, Bars } from "@/components/ui";
+import { Rows, RowLink } from "@/components/rows";
 import DateRange from "@/components/date-range";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +59,7 @@ export default async function Dashboard({
         </div>
       )}
 
-      <div className="stagger grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="stagger grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Stat
           label="Revenue"
           value={money(now.revenue)}
@@ -95,7 +96,10 @@ export default async function Dashboard({
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.55fr_1fr]">
-        <div className="flex flex-col gap-5">
+        {/* min-w-0 on both columns: a grid track sizes to its widest child's
+            min-content unless told otherwise, and one wide chart makes every
+            card on the page wider than the phone. */}
+        <div className="flex min-w-0 flex-col gap-5">
           <Card>
             <CardHead
               title="Sales by day"
@@ -135,7 +139,24 @@ export default async function Dashboard({
                 <Empty title="Nothing sold yet" hint="Sales made here and at the kiosk both land in this list." />
               </div>
             ) : (
-              <div className="overflow-x-auto px-2 py-3">
+              <>
+              {/* On a phone the same facts read as a list; the table would
+                  side-scroll, which is the tell of a shrunken web page. */}
+              <div className="sm:hidden">
+                <Rows>
+                  {recent.map((r) => (
+                    <RowLink
+                      key={r.id}
+                      href={`/admin/invoices/${r.id}`}
+                      title={r.customer_name}
+                      sub={`#${r.id} · ${dateTime(r.sold_at)}`}
+                      right={money(r.total)}
+                      rightSub={<StatusPill status={r.status} />}
+                    />
+                  ))}
+                </Rows>
+              </div>
+              <div className="hidden overflow-x-auto px-2 py-3 sm:block">
                 <table className="tbl">
                   <thead>
                     <tr>
@@ -173,11 +194,12 @@ export default async function Dashboard({
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </Card>
         </div>
 
-        <div className="flex flex-col gap-5">
+        <div className="flex min-w-0 flex-col gap-5">
           <Card>
             <CardHead
               title="Needs attention"

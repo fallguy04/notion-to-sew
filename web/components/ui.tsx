@@ -59,7 +59,10 @@ export function PageHead({
         </h1>
         {hint && <p className="mt-2 text-[14px] text-ink-soft">{hint}</p>}
       </div>
-      {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}
+      {/* min-w-0: the action slot holds scrollable things (the date chips);
+          a flex item's default min-width would size to their full content and
+          push the page wider than the phone. */}
+      {action && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{action}</div>}
     </header>
   );
 }
@@ -94,7 +97,7 @@ export function Stat({
       <div className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-ink-faint">
         {label}
       </div>
-      <div className={`font-display tabular mt-2 text-[27px] font-semibold leading-none ${accent}`}>
+      <div className={`font-display tabular mt-2 text-[22px] font-semibold leading-none sm:text-[27px] ${accent}`}>
         {value}
       </div>
       {hint && <div className="mt-1.5 text-[12.5px] leading-snug text-ink-faint">{hint}</div>}

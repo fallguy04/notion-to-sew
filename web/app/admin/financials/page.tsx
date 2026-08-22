@@ -17,6 +17,7 @@ import { money, shortDate, today } from "@/lib/format";
 import { mailConfigured } from "@/lib/mail";
 import { Card, CardHead, PageHead, Stat, Empty, Note } from "@/components/ui";
 import DateRange from "@/components/date-range";
+import { Rows, RowLink } from "@/components/rows";
 import InvoiceActions from "@/components/invoice-actions";
 import ActionButton from "@/components/action-button";
 import ExpenseForm from "./expense-form";
@@ -110,7 +111,7 @@ async function ProfitTab({ from, to }: { from: string; to: string }) {
 
   return (
     <>
-      <div className="stagger mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="stagger mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Stat label="Revenue" value={money(totalIncome)} hint={`${income.orders} invoices`} />
         <Stat label="Cost of goods" value={money(income.cogs)} hint={`${margin.toFixed(0)}% gross margin`} />
         <Stat
@@ -300,7 +301,7 @@ async function TaxTab({ from, to }: { from: string; to: string }) {
   const summary = await getTaxSummary(from, to);
   return (
     <>
-      <div className="stagger mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="stagger mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Stat label="Tax collected" value={money(summary.tax_collected)} tone="warn" />
         <Stat label="Taxable sales" value={money(summary.taxable_sales)} />
         <Stat label="Exempt sales" value={money(summary.exempt_sales)} hint="Wholesale and untaxed" />
@@ -429,7 +430,7 @@ async function ReceivableTab() {
 
   return (
     <>
-      <div className="stagger mb-5 grid gap-3 sm:grid-cols-3">
+      <div className="stagger mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat label="Outstanding" value={money(total)} tone={overdue.length ? "bad" : "plain"} />
         <Stat label="Open invoices" value={String(open.length)} />
         <Stat
@@ -442,7 +443,29 @@ async function ReceivableTab() {
 
       <Card>
         <CardHead title="Waiting to be paid" hint="Biggest first." />
-        <div className="overflow-x-auto px-2 py-3">
+        <div className="sm:hidden">
+          <Rows>
+            {open.map((i) => (
+              <RowLink
+                key={i.id}
+                href={`/admin/invoices/${i.id}`}
+                title={i.customer_name}
+                sub={`#${i.id} · sold ${shortDate(i.sold_at)}`}
+                right={money(i.total)}
+                rightSub={
+                  i.overdue ? (
+                    <span className="pill pill-late">{i.days_overdue}d late</span>
+                  ) : (
+                    <span className="text-[12px] text-ink-faint">
+                      {i.due_date ? `due ${shortDate(i.due_date)}` : "no due date"}
+                    </span>
+                  )
+                }
+              />
+            ))}
+          </Rows>
+        </div>
+        <div className="hidden overflow-x-auto px-2 py-3 sm:block">
           <table className="tbl">
             <thead>
               <tr>

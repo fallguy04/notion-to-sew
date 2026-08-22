@@ -10,6 +10,7 @@ import { Submit, Result, Spinner } from "@/components/form";
 import InvoiceActions from "@/components/invoice-actions";
 import Modal from "@/components/modal";
 import BackLink from "../../nav-history";
+import { Rows, RowLink } from "@/components/rows";
 import { useToast } from "@/components/toast";
 import { saveCustomerAction, addCreditAction, deleteCustomerAction } from "../actions";
 import { useTransition } from "react";
@@ -112,7 +113,24 @@ export default function ProfileClient({
                 />
               </div>
             ) : (
-              <div className="overflow-x-auto px-2 py-3">
+              <>
+              {/* Per-row actions don't survive the phone width; the row opens
+                  the invoice, which is where every action already lives. */}
+              <div className="sm:hidden">
+                <Rows>
+                  {invoices.map((i) => (
+                    <RowLink
+                      key={i.id}
+                      href={`/admin/invoices/${i.id}`}
+                      title={`Invoice #${i.id}`}
+                      sub={`${shortDate(i.sold_at)}${i.payment ? ` · ${i.payment}` : ""}`}
+                      right={money(i.total)}
+                      rightSub={<StatusPill status={i.status} dueDate={i.due_date} />}
+                    />
+                  ))}
+                </Rows>
+              </div>
+              <div className="hidden overflow-x-auto px-2 py-3 sm:block">
                 <table className="tbl">
                   <thead>
                     <tr>
@@ -155,6 +173,7 @@ export default function ProfileClient({
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </Card>
         </div>

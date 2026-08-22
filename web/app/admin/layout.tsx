@@ -6,6 +6,8 @@ import Nav from "./nav";
 import { NavHistory } from "./nav-history";
 import Palette from "./palette";
 import Pwa from "./pwa";
+import BottomNav from "./bottom-nav";
+import InstallNudge from "./install-nudge";
 
 /**
  * The gate for everything under /admin.
@@ -30,10 +32,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <Pwa />
       <div className="flex min-h-dvh flex-col lg:flex-row">
         <Nav />
-        <main className="min-w-0 flex-1 px-5 pb-24 pt-6 lg:px-10 lg:pt-9">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        <main className="min-w-0 flex-1 px-5 pb-28 pt-6 lg:px-10 lg:pb-24 lg:pt-9">
+          <div className="mx-auto w-full max-w-6xl">
+            <InstallNudge />
+            {children}
+          </div>
         </main>
       </div>
+      <BottomNav />
     </ToastHost>
   );
 }

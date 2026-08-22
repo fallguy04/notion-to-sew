@@ -68,7 +68,7 @@ export default function Pwa() {
   const seen = stale ?? readSeen();
 
   return (
-    <div className="no-print fixed inset-x-0 bottom-0 z-50 border-t border-amber/40 bg-amber/15 px-4 py-2.5 backdrop-blur">
+    <div className="no-print fixed inset-x-0 bottom-[calc(59px+env(safe-area-inset-bottom))] z-50 border-y border-amber/40 bg-amber/15 px-4 py-2.5 backdrop-blur lg:bottom-0 lg:border-t">
       <p className="mx-auto max-w-3xl text-center text-[13px] leading-snug text-ink-soft">
         <strong className="font-semibold text-ink">
           {online ? "Can't reach the shop." : "No connection."}

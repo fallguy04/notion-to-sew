@@ -62,8 +62,10 @@ export default function DateRange({ from, to }: { from: string; to: string }) {
   });
 
   return (
-    <div className="no-print flex flex-wrap items-center gap-2">
-      <div className="flex flex-wrap gap-1">
+    <div className="no-print flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+      {/* One row that scrolls on a phone. Wrapped chips plus two date boxes
+          were eating a third of the screen before any numbers appeared. */}
+      <div className="flex max-w-full gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden">
         {options.map((p) => {
           const on = active?.label === p.label;
           return (
@@ -74,7 +76,7 @@ export default function DateRange({ from, to }: { from: string; to: string }) {
                 const [a, b] = p.range();
                 apply(a, b);
               }}
-              className={`tap rounded-full border px-3 py-1.5 text-[13px] font-medium ${
+              className={`tap shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-[13px] font-medium ${
                 on
                   ? "border-spruce/30 bg-spruce-light text-spruce-dark"
                   : "border-line bg-surface text-ink-soft hover:border-ink-faint/50"
@@ -86,7 +88,7 @@ export default function DateRange({ from, to }: { from: string; to: string }) {
         })}
       </div>
 
-      <div className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-1.5 py-1">
+      <div className="flex items-center gap-1.5 self-start rounded-full border border-line bg-surface px-1.5 py-1">
         <input
           type="date"
           aria-label="From"
